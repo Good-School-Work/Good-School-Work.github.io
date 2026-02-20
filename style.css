@@ -1,7 +1,7 @@
 /* Nunito font */
 @font-face {
   font-family: 'Nunito';
-  src: url('fonts/Nunito-VariableFont_wght.ttf') format('truetype');
+  src: url('Fonts/Nunito-VariableFont_wght.ttf') format('truetype');
   font-weight: normal;
   font-style: normal;
   font-display: swap;
@@ -205,5 +205,6 @@ a {
     padding: 8px 12px;
   }
 }
+
 
 

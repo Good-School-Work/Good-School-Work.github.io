@@ -1,0 +1,209 @@
+/* Nunito font */
+@font-face {
+  font-family: 'Nunito';
+  src: url('fonts/Nunito-VariableFont_wght.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Dark/Light mode variables */
+:root {
+  --bg-color: #121212;
+  --card-bg: #222;
+  --card-border: #424242;
+  --text-color: white;
+  --hover-bg: #151515;
+  --button-bg: #222;
+  --button-border: #424242;
+  --button-text: white;
+}
+
+/* Body */
+body {
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  font-family: 'Nunito', Arial, sans-serif;
+  margin: 0;
+  padding: 80px 20px 20px 20px; /* extra top padding for fixed search bar */
+}
+
+/* Heading */
+h1 {
+  text-align: center;
+  margin-bottom: 30px;
+  font-size: 3em;
+}
+
+/* Top-left buttons container */
+#top-left-buttons {
+  position: fixed;
+  top: 20px;
+  left: 20px;
+  display: flex;
+  gap: 10px;
+  z-index: 1000;
+}
+
+#top-left-buttons button {
+  padding: 10px 20px;
+  border-radius: 8px;
+  border: 2px solid var(--button-border);
+  background-color: var(--button-bg);
+  color: var(--button-text);
+  font-family: 'Nunito', Arial, sans-serif;
+  font-size: 16px;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.2s;
+}
+
+#top-left-buttons button:hover {
+  background-color: var(--hover-bg);
+  transform: scale(1.05);
+}
+
+/* Top-right search container */
+.search-container {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  display: flex;
+  align-items: center;
+  z-index: 1000;
+}
+
+/* Search input */
+#search {
+  width: 0;
+  padding: 10px 15px;
+  border-radius: 25px;
+  border: 2px solid var(--button-border);
+  background-color: var(--button-bg);
+  color: var(--button-text);
+  font-size: 16px;
+  outline: none;
+  transition: width 0.3s ease, opacity 0.3s ease;
+  opacity: 0;
+  margin-right: 10px;
+  font-family: 'Nunito', Arial, sans-serif;
+}
+
+/* Search input expanded */
+#search.show {
+  width: 250px;
+  opacity: 1;
+}
+
+/* Search icon */
+#search-icon {
+  width: 28px;
+  height: 28px;
+  cursor: pointer;
+  border: none;
+  outline: none;
+  background: none; /* always transparent */
+}
+
+#search-icon:hover {
+  background: none; /* prevent hover highlight */
+}
+
+/* Games grid */
+.games {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 20px;
+  max-width: 1500px;
+  margin: 0 auto;
+}
+
+/* Cards */
+.card {
+  background-color: var(--card-bg);
+  border: 2px solid var(--card-border);
+  color: var(--text-color);
+  padding: 20px;
+  text-align: center;
+  border-radius: 10px;
+  position: relative;
+  transition: transform 0.2s ease, background 0.2s ease;
+}
+
+.card:hover {
+  background-color: var(--hover-bg);
+  cursor: pointer;
+  transform: scale(1.05);
+}
+
+/* Heart icon */
+.heart {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  font-size: 16px;
+  color: #888;
+  cursor: pointer;
+  user-select: none;
+  transition: color 0.2s;
+}
+
+.heart.favorited {
+  color: red;
+}
+
+.heart:hover {
+  color: #ff6666;
+}
+
+/* Links */
+a {
+  text-decoration: none;
+  color: inherit;
+}
+
+/* Favorites & Theme buttons (in top-left container) */
+#show-favorites,
+#toggle-theme {
+  background-color: var(--button-bg);
+  border: 2px solid var(--button-border);
+  color: var(--button-text);
+}
+
+#show-favorites:hover,
+#toggle-theme:hover {
+  background-color: var(--hover-bg);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .games {
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 15px;
+  }
+
+  #search.show {
+    width: 200px;
+  }
+}
+
+@media (max-width: 480px) {
+  body {
+    padding-top: 100px;
+  }
+
+  .games {
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: 10px;
+  }
+
+  #search.show {
+    width: 150px;
+  }
+
+  #search {
+    font-size: 10px;
+    padding: 8px 12px;
+  }
+}
+
+

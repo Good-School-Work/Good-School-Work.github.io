@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" type="svg" href="https://upload.wikimedia.org/wikipedia/commons/thumb/1/19/Google_Classroom_Logo.svg/1024px-Google_Classroom_Logo.svg.png?20221017163738">
+  <title>School Work</title>
+</head>
+<body>
+
+<h1>Unblocked Games</h1>
+
+<!-- Top-left buttons container -->
+<div id="top-left-buttons">
+  <button id="show-favorites">Show Favorites Only</button>
+  <button id="toggle-theme">Toggle Dark/Light Mode</button>
+</div>
+
+<!-- Search bar top-right -->
+<div class="search-container">
+  <input type="text" id="search" placeholder="Search games..." />
+  <img id="search-icon" src="./images/SearchIcon.png" alt="Search" />
+</div>
+
+<!-- Games grid -->
+<div class="games">
+  <a href="games/snowrider.html" class="card" data-game="snowrider">
+    Snow Rider
+    <span class="heart">&#10084;</span>
+  </a>
+  <a href="games/Gate-Solitare.html" class="card" data-game="gate-solitaire">
+    Gate Solitaire
+    <span class="heart">&#10084;</span>
+  </a>
+  <a href="games/Infinite-Craft.html" class="card" data-game="infinite-craft">
+    Infinite Craft
+    <span class="heart">&#10084;</span>
+  </a>
+  <a href="games/chess.html" class="card" data-game="chess">
+    Chess
+    <span class="heart">&#10084;</span>
+  </a>
+  <a href="games/Hexagon-race.html" class="card" data-game="hexagon-race">
+    Hexagon Race
+    <span class="heart">&#10084;</span>
+  </a>
+  <a href="games/Geometry-Dash.html" class="card" data-game="geometry-dash">
+    Geometry Dash
+    <span class="heart">&#10084;</span>
+  </a>
+  <a href="games/Steal-a-Brainrot.html" class="card" data-game="steal-a-brainrot">
+    Steal a Brainrot
+    <span class="heart">&#10084;</span>
+  </a>
+  <a href="games/grow-a-garden.html" class="card" data-game="grow-a-garden">
+    Grow a Garden
+    <span class="heart">&#10084;</span>
+  </a>
+  <a href="games/Drift-Boss.html" class="card" data-game="drift-boss">
+    Drift Boss
+    <span class="heart">&#10084;</span>
+  </a>
+  <a href="games/ovo-online.html" class="card" data-game="ovo-online">
+  OvO Online
+  <span class="heart">&#10084;</span>
+  </a>
+  <a href="games/bloxd.html" class="card" data-game="bloxd">
+    Bloxd
+    <span class="heart">&#10084;</span>
+  </a>
+  <a href="games/kirka.html" class="card" data-game="kirka">
+    Kirka.io
+    <span class="heart">&#10084;</span>
+  </a>
+</div>
+
+<script>
+// Search functionality
+const searchIcon = document.getElementById('search-icon');
+const searchInput = document.getElementById('search');
+const gameCards = document.querySelectorAll('.games .card');
+
+searchIcon.addEventListener('click', () => {
+  searchInput.classList.toggle('show');
+  if (searchInput.classList.contains('show')) searchInput.focus();
+});
+
+searchInput.addEventListener('input', () => {
+  const query = searchInput.value.toLowerCase();
+  gameCards.forEach(card => {
+    const title = card.textContent.toLowerCase();
+    card.style.display = title.includes(query) ? '' : 'none';
+  });
+});
+
+// Favorites functionality
+document.addEventListener('DOMContentLoaded', () => {
+  const hearts = document.querySelectorAll('.heart');
+  const favorites = JSON.parse(localStorage.getItem('favorites') || '[]');
+
+  hearts.forEach(heart => {
+    const card = heart.parentElement;
+    const game = card.dataset.game;
+
+    // Mark favorited hearts on page load
+    if (favorites.includes(game)) heart.classList.add('favorited');
+
+    // Toggle favorite on click
+    heart.addEventListener('click', e => {
+      e.preventDefault(); // Prevent card link click
+      heart.classList.toggle('favorited');
+
+      let updatedFavorites = JSON.parse(localStorage.getItem('favorites') || '[]');
+      if (heart.classList.contains('favorited')) {
+        if (!updatedFavorites.includes(game)) updatedFavorites.push(game);
+      } else {
+        updatedFavorites = updatedFavorites.filter(f => f !== game);
+      }
+      localStorage.setItem('favorites', JSON.stringify(updatedFavorites));
+    });
+  });
+});
+
+// Show favorites filter
+const showFavoritesBtn = document.getElementById('show-favorites');
+let showingFavorites = false;
+
+showFavoritesBtn.addEventListener('click', () => {
+  const favorites = JSON.parse(localStorage.getItem('favorites') || '[]');
+  showingFavorites = !showingFavorites;
+
+  gameCards.forEach(card => {
+    const game = card.dataset.game;
+    card.style.display = showingFavorites
+      ? favorites.includes(game) ? '' : 'none'
+      : '';
+  });
+
+  showFavoritesBtn.textContent = showingFavorites ? 'Show All Games' : 'Show Favorites Only';
+});
+
+// Dark/Light mode toggle
+const toggleThemeBtn = document.getElementById('toggle-theme');
+let darkMode = localStorage.getItem('theme') !== 'light';
+
+function applyTheme() {
+  if (darkMode) {
+    document.documentElement.style.setProperty('--bg-color', '#121212');
+    document.documentElement.style.setProperty('--card-bg', '#222');
+    document.documentElement.style.setProperty('--card-border', '#424242');
+    document.documentElement.style.setProperty('--text-color', 'white');
+    document.documentElement.style.setProperty('--hover-bg', '#151515');
+    document.documentElement.style.setProperty('--button-bg', '#222');
+    document.documentElement.style.setProperty('--button-border', '#424242');
+    document.documentElement.style.setProperty('--button-text', 'white');
+  } else {
+    document.documentElement.style.setProperty('--bg-color', '#ffffff');
+    document.documentElement.style.setProperty('--card-bg', '#f0f0f0');
+    document.documentElement.style.setProperty('--card-border', '#cccccc');
+    document.documentElement.style.setProperty('--text-color', '#121212');
+    document.documentElement.style.setProperty('--hover-bg', '#e0e0e0');
+    document.documentElement.style.setProperty('--button-bg', '#f0f0f0');
+    document.documentElement.style.setProperty('--button-border', '#cccccc');
+    document.documentElement.style.setProperty('--button-text', '#121212');
+  }
+
+  // Update search input colors
+  searchInput.style.backgroundColor = getComputedStyle(document.documentElement).getPropertyValue('--button-bg');
+  searchInput.style.color = getComputedStyle(document.documentElement).getPropertyValue('--button-text');
+  searchInput.style.borderColor = getComputedStyle(document.documentElement).getPropertyValue('--button-border');
+}
+
+// Apply theme on load
+applyTheme();
+
+// Toggle theme on click
+toggleThemeBtn.addEventListener('click', () => {
+  darkMode = !darkMode;
+  localStorage.setItem('theme', darkMode ? 'dark' : 'light');
+  applyTheme();
+});
+</script>
+
+</body>
+</html>

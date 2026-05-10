@@ -1,185 +1,466 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <link rel="stylesheet" href="style.css">
-  <link rel="icon" type="image/png" href="images/Icon.png">
+  <meta charset="UTF-8">
   <title>School Work</title>
+  <link rel="icon" type="image/png" href="images/Icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+    import {
+      getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged
+    } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+    import {
+      getFirestore, doc, getDoc, setDoc, updateDoc, collection, getDocs
+    } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+    // ─── Firebase config ────────────────────────────────────────────────────────
+    const firebaseConfig = {
+      apiKey: "AIzaSyCoK5dtkZwEIo0-1RqqaT3PAI0gUpBLLDQ",
+      authDomain: "good-school-work.firebaseapp.com",
+      projectId: "good-school-work",
+      storageBucket: "good-school-work.firebasestorage.app",
+      messagingSenderId: "111606118885",
+      appId: "1:111606118885:web:d492e59aa0661e2543d70c"
+    };
+
+    const ADMIN_EMAILS = ["dragon.playz933@gmail.com", "ehanahmad@tahuna.school.nz"];
+
+    const app  = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db   = getFirestore(app);
+    const provider = new GoogleAuthProvider();
+
+    // Expose login/logout globally
+    window.login  = () => signInWithPopup(auth, provider);
+    window.logout = () => signOut(auth);
+
+    // ─── Helpers ─────────────────────────────────────────────────────────────────
+    function showToast(msg, dur = 2200) {
+      const t = document.getElementById("toast");
+      t.textContent = msg;
+      t.classList.add("show");
+      setTimeout(() => t.classList.remove("show"), dur);
+    }
+
+    // ─── Create user doc if needed ───────────────────────────────────────────────
+    async function ensureUser(user) {
+      const ref  = doc(db, "users", user.uid);
+      const snap = await getDoc(ref);
+      if (!snap.exists()) {
+        await setDoc(ref, {
+          email:     user.email,
+          favorites: [],
+          theme:     "dark",
+          banned:    false,
+          isAdmin:   ADMIN_EMAILS.includes(user.email)
+        });
+      } else {
+        // Promote to admin if in list but flag not set yet
+        const d = snap.data();
+        if (ADMIN_EMAILS.includes(user.email) && !d.isAdmin) {
+          await updateDoc(ref, { isAdmin: true });
+        }
+      }
+    }
+
+    // ─── FAVORITES (cloud-synced, per-account) ──────────────────────────────────
+    let currentFavs = [];
+
+    async function loadFavorites(user) {
+      const snap = await getDoc(doc(db, "users", user.uid));
+      currentFavs = snap.data()?.favorites || [];
+      renderFavorites();
+    }
+
+    function renderFavorites() {
+      document.querySelectorAll(".heart").forEach(h => {
+        const game = h.parentElement.dataset.game;
+        h.classList.toggle("favorited", currentFavs.includes(game));
+      });
+    }
+
+    async function toggleFavorite(user, game) {
+      const ref  = doc(db, "users", user.uid);
+      const snap = await getDoc(ref);
+      let favs   = snap.data()?.favorites || [];
+      const added = !favs.includes(game);
+      favs = added ? [...favs, game] : favs.filter(f => f !== game);
+      await updateDoc(ref, { favorites: favs });
+      currentFavs = favs;
+      renderFavorites();
+      showToast(added ? "❤️ Added to favorites" : "💔 Removed from favorites");
+      if (showingFavs) filterFavorites(true);
+    }
+
+    // ─── THEME ───────────────────────────────────────────────────────────────────
+    let dark = true;
+
+    function applyTheme(isDark) {
+      dark = isDark;
+      document.documentElement.classList.toggle("light", !isDark);
+    }
+
+    function toggleTheme() {
+      applyTheme(!dark);
+      const user = auth.currentUser;
+      if (user) updateDoc(doc(db, "users", user.uid), { theme: dark ? "dark" : "light" }).catch(() => {});
+    }
+
+    // ─── FAVORITES FILTER ────────────────────────────────────────────────────────
+    let showingFavs = false;
+
+    function filterFavorites(force) {
+      if (force === undefined) {
+        showingFavs = !showingFavs;
+      }
+      const btn = document.getElementById("show-favorites");
+      btn.textContent = showingFavs ? "Show All" : "⭐ Favorites";
+      document.querySelectorAll(".card").forEach(card => {
+        const game = card.dataset.game;
+        if (showingFavs) {
+          card.classList.toggle("fav-hidden", !currentFavs.includes(game));
+        } else {
+          card.classList.remove("fav-hidden");
+        }
+      });
+    }
+
+    // ─── SEARCH ──────────────────────────────────────────────────────────────────
+    function initSearch() {
+      const icon  = document.getElementById("search-icon");
+      const input = document.getElementById("search");
+      const cards = document.querySelectorAll(".card");
+      const noRes = document.getElementById("no-results");
+
+      icon.addEventListener("click", () => {
+        input.classList.toggle("show");
+        if (input.classList.contains("show")) input.focus();
+      });
+
+      input.addEventListener("input", () => {
+        const q = input.value.toLowerCase();
+        let visible = 0;
+        cards.forEach(card => {
+          const match = card.textContent.toLowerCase().includes(q);
+          card.classList.toggle("hidden", !match);
+          if (match) visible++;
+        });
+        noRes.style.display = visible === 0 ? "block" : "none";
+      });
+    }
+
+    // ─── ADMIN PANEL ─────────────────────────────────────────────────────────────
+    let adminTab = "users";
+
+    function openAdmin() {
+      document.getElementById("admin-overlay").classList.add("open");
+      loadAdminTab("users");
+    }
+
+    function closeAdmin() {
+      document.getElementById("admin-overlay").classList.remove("open");
+    }
+
+    function switchTab(tab) {
+      adminTab = tab;
+      document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
+      loadAdminTab(tab);
+    }
+
+    async function loadAdminTab(tab) {
+      const body = document.getElementById("admin-body");
+      if (tab === "users") {
+        body.innerHTML = `<div class="center"><div class="spin"></div></div>`;
+        try {
+          const snap = await getDocs(collection(db, "users"));
+          if (snap.empty) { body.innerHTML = `<p style="color:var(--subtext);text-align:center;margin-top:20px;">No users found.</p>`; return; }
+
+          const rows = [];
+          snap.forEach(d => rows.push({ id: d.id, ...d.data() }));
+
+          // Sort: admins first, then banned, then rest
+          rows.sort((a, b) => {
+            if (a.isAdmin && !b.isAdmin) return -1;
+            if (!a.isAdmin && b.isAdmin) return 1;
+            return 0;
+          });
+
+          body.innerHTML = `<div class="user-list">${rows.map(u => userRow(u)).join("")}</div>`;
+        } catch (e) {
+          body.innerHTML = `<p style="color:var(--danger);">Error loading users: ${e.message}</p>`;
+        }
+
+      } else if (tab === "ban-email") {
+        body.innerHTML = `
+          <div class="ban-by-email">
+            <label>Ban a user by email</label>
+            <div class="ban-input-row">
+              <input class="admin-input" id="ban-email-input" type="email" placeholder="user@example.com" />
+              <button class="admin-submit" id="ban-email-btn">Ban</button>
+            </div>
+            <div class="admin-note">⚠️ This will search for the user by email and set their account to banned. They'll see a BANNED screen on next login.</div>
+            <div id="ban-email-result" style="margin-top:10px;font-size:13px;font-weight:700;"></div>
+          </div>`;
+
+        document.getElementById("ban-email-btn").addEventListener("click", async () => {
+          const email = document.getElementById("ban-email-input").value.trim().toLowerCase();
+          const result = document.getElementById("ban-email-result");
+          if (!email) { result.style.color = "var(--danger)"; result.textContent = "Please enter an email."; return; }
+
+          result.style.color = "var(--subtext)";
+          result.textContent = "Searching...";
+
+          const snap = await getDocs(collection(db, "users"));
+          let found = false;
+          for (const d of snap.docs) {
+            if ((d.data().email || "").toLowerCase() === email) {
+              await updateDoc(doc(db, "users", d.id), { banned: true });
+              found = true;
+              result.style.color = "var(--success)";
+              result.textContent = `✅ Banned ${email}`;
+              showToast(`🚫 Banned ${email}`);
+              break;
+            }
+          }
+          if (!found) {
+            result.style.color = "var(--danger)";
+            result.textContent = `❌ No user found with email: ${email}`;
+          }
+        });
+      }
+    }
+
+    function userRow(u) {
+      const initials = (u.email || "?")[0].toUpperCase();
+      const isSelf   = auth.currentUser?.email === u.email;
+      const badges   = [];
+      if (u.isAdmin) badges.push(`<span class="badge admin">ADMIN</span>`);
+      if (u.banned)  badges.push(`<span class="badge banned">BANNED</span>`);
+      else           badges.push(`<span class="badge active">ACTIVE</span>`);
+
+      const actions = isSelf ? `<span style="font-size:12px;color:var(--subtext)">You</span>` : `
+        ${u.banned
+          ? `<button class="action-btn unban" onclick="window.adminUnban('${u.id}', this)">Unban</button>`
+          : `<button class="action-btn ban"   onclick="window.adminBan('${u.id}', this)">Ban</button>`
+        }`;
+
+      return `
+        <div class="user-row" id="row-${u.id}">
+          <div class="user-avatar">${initials}</div>
+          <div class="user-info">
+            <div class="user-email">${u.email || "Unknown"}</div>
+            <div class="user-meta">${badges.join(" ")}</div>
+          </div>
+          <div class="user-actions">${actions}</div>
+        </div>`;
+    }
+
+    window.adminBan = async (uid, btn) => {
+      btn.disabled = true;
+      btn.textContent = "...";
+      await updateDoc(doc(db, "users", uid), { banned: true });
+      showToast("🚫 User banned");
+      loadAdminTab("users");
+    };
+
+    window.adminUnban = async (uid, btn) => {
+      btn.disabled = true;
+      btn.textContent = "...";
+      await updateDoc(doc(db, "users", uid), { banned: false });
+      showToast("✅ User unbanned");
+      loadAdminTab("users");
+    };
+
+    // ─── AUTH ────────────────────────────────────────────────────────────────────
+    onAuthStateChanged(auth, async (user) => {
+      const loginScreen = document.getElementById("login-screen");
+      const main        = document.getElementById("main");
+
+      if (!user) {
+        loginScreen.style.display = "flex";
+        main.style.display = "none";
+        currentFavs = [];
+        showingFavs = false;
+        return;
+      }
+
+      await ensureUser(user);
+
+      const snap = await getDoc(doc(db, "users", user.uid));
+      const data = snap.data();
+
+      if (data.banned) {
+        document.body.innerHTML = `
+          <div style="display:flex;align-items:center;justify-content:center;min-height:100vh;background:#0d0d0d;">
+            <div style="text-align:center;color:white;font-family:'Nunito',sans-serif;">
+              <div style="font-size:5em;margin-bottom:16px;">🚫</div>
+              <h1 style="color:#ff4444;font-size:2.5em;margin-bottom:8px;">You are banned.</h1>
+              <p style="color:#888;">Contact an admin if you believe this is a mistake.</p>
+            </div>
+          </div>`;
+        return;
+      }
+
+      loginScreen.style.display = "none";
+      main.style.display = "block";
+
+      // Load theme from Firestore
+      applyTheme(data.theme !== "light");
+
+      // Load favorites for THIS account
+      await loadFavorites(user);
+
+      // Show admin button if admin
+      if (data.isAdmin) {
+        document.getElementById("admin-btn").style.display = "inline-block";
+      } else {
+        document.getElementById("admin-btn").style.display = "none";
+      }
+    });
+
+    // ─── DOM READY ───────────────────────────────────────────────────────────────
+    window.addEventListener("DOMContentLoaded", () => {
+      initSearch();
+
+      document.getElementById("toggle-theme").addEventListener("click", toggleTheme);
+      document.getElementById("logout-btn").addEventListener("click", () => signOut(auth));
+      document.getElementById("show-favorites").addEventListener("click", () => filterFavorites());
+      document.getElementById("admin-btn").addEventListener("click", openAdmin);
+      document.getElementById("close-admin").addEventListener("click", closeAdmin);
+
+      // Close admin if clicking outside panel
+      document.getElementById("admin-overlay").addEventListener("click", (e) => {
+        if (e.target === document.getElementById("admin-overlay")) closeAdmin();
+      });
+
+      // Tab buttons
+      document.querySelectorAll(".tab-btn").forEach(btn => {
+        btn.addEventListener("click", () => switchTab(btn.dataset.tab));
+      });
+
+      // Heart clicks (event delegation)
+      document.getElementById("main").addEventListener("click", async (e) => {
+        if (!e.target.classList.contains("heart")) return;
+        e.preventDefault();
+        const user = auth.currentUser;
+        if (!user) return;
+        const game = e.target.parentElement.dataset.game;
+        await toggleFavorite(user, game);
+      });
+    });
+  </script>
 </head>
+
 <body>
 
-<h1>Unblocked Games</h1>
-
-<!-- Top-left buttons container -->
-<div id="top-left-buttons">
-  <button id="show-favorites">Show Favorites Only</button>
-  <button id="toggle-theme">Toggle Dark/Light Mode</button>
+<!-- ═══════════════════════════════════════
+     LOGIN SCREEN
+══════════════════════════════════════════ -->
+<div id="login-screen">
+  <div class="login-box">
+    <h1>🎮 Unblocked Games</h1>
+    <p>Sign in to save your favorites & settings</p>
+    <button onclick="login()">
+      <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"/><path fill="#FF3D00" d="m6.306 14.691 6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 16.318 4 9.656 8.337 6.306 14.691z"/><path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238A11.91 11.91 0 0 1 24 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z"/><path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303a12.04 12.04 0 0 1-4.087 5.571l.003-.002 6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z"/></svg>
+      Sign in with Google
+    </button>
+  </div>
 </div>
 
-<!-- Search bar top-right -->
-<div class="search-container">
-  <input type="text" id="search" placeholder="Search games..." />
-  <img id="search-icon" src="./images/SearchIcon.png" alt="Search" />
+<!-- ═══════════════════════════════════════
+     ADMIN PANEL OVERLAY
+══════════════════════════════════════════ -->
+<div id="admin-overlay">
+  <div id="admin-panel">
+    <div class="admin-header">
+      <h2>🛡️ Admin Dashboard</h2>
+      <button class="close-btn" id="close-admin" title="Close">✕</button>
+    </div>
+    <div class="admin-tabs">
+      <button class="tab-btn active" data-tab="users">👥 User List</button>
+      <button class="tab-btn" data-tab="ban-email">✉️ Ban by Email</button>
+    </div>
+    <div class="admin-body" id="admin-body">
+      <div class="center"><div class="spin"></div></div>
+    </div>
+  </div>
 </div>
 
-<!-- Games grid -->
-<div class="games">
-  <a href="games/snowrider.html" class="card" data-game="snowrider">
-    Snow Rider
-    <span class="heart">♡</span>
-  </a>
+<!-- ═══════════════════════════════════════
+     MAIN APP
+══════════════════════════════════════════ -->
+<div id="main" style="display:none;">
 
-  <a href="games/Gate-Solitare.html" class="card" data-game="gate-solitaire">
-    Gate Solitaire
-    <span class="heart">♡</span>
-  </a>
+  <!-- Topbar -->
+  <div id="topbar">
+    <h1>🎮 Unblocked Games</h1>
 
-  <a href="games/Infinite-Craft.html" class="card" data-game="infinite-craft">
-    Infinite Craft
-    <span class="heart">♡</span>
-  </a>
+    <button id="show-favorites" class="top-btn">⭐ Favorites</button>
+    <button id="toggle-theme" class="top-btn" title="Toggle theme">🌓</button>
+    <button id="admin-btn" style="display:none;">🛡️ Admin</button>
+    <button id="logout-btn" class="top-btn">Logout</button>
 
-  <a href="games/Hexagon-race.html" class="card" data-game="hexagon-race">
-    Hexagon Race
-    <span class="heart">♡</span>
-  </a>
+    <div class="search-wrap">
+      <input type="text" id="search" placeholder="Search games…" />
+      <img id="search-icon" src="./images/SearchIcon.png" alt="Search" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22white%22 stroke-width=%222%22><circle cx=%2211%22 cy=%2211%22 r=%228%22/><path d=%22m21 21-4.35-4.35%22/></svg>'" />
+    </div>
+  </div>
 
-  <a href="games/Geometry-Dash.html" class="card" data-game="geometry-dash">
-    Geometry Dash
-    <span class="heart">♡</span>
-  </a>
+  <!-- Game Grid -->
+  <div class="games">
 
-  <a href="games/Steal-a-Brainrot.html" class="card" data-game="steal-a-brainrot">
-    Steal a Brainrot
-    <span class="heart">♡</span>
-  </a>
+    <a href="games/snowrider.html" class="card" data-game="snowrider">
+      Snow Rider <span class="heart">♡</span>
+    </a>
 
-  <a href="games/grow-a-garden.html" class="card" data-game="grow-a-garden">
-    Grow a Garden
-    <span class="heart">♡</span>
-  </a>
+    <a href="games/Gate-Solitare.html" class="card" data-game="gate-solitaire">
+      Gate Solitaire <span class="heart">♡</span>
+    </a>
 
-  <a href="games/Drift-Boss.html" class="card" data-game="drift-boss">
-    Drift Boss
-    <span class="heart">♡</span>
-  </a>
+    <a href="games/Infinite-Craft.html" class="card" data-game="infinite-craft">
+      Infinite Craft <span class="heart">♡</span>
+    </a>
 
-  <a href="games/Run-3.html" class="card" data-game="run-3">
-    Run 3 (NOT WORKING)
-    <span class="heart">♡</span>
-  </a>
+    <a href="games/Hexagon-race.html" class="card" data-game="hexagon-race">
+      Hexagon Race <span class="heart">♡</span>
+    </a>
+
+    <a href="games/Geometry-Dash.html" class="card" data-game="geometry-dash">
+      Geometry Dash <span class="heart">♡</span>
+    </a>
+
+    <a href="games/Steal-a-Brainrot.html" class="card" data-game="steal-a-brainrot">
+      Steal a Brainrot <span class="heart">♡</span>
+    </a>
+
+    <a href="games/grow-a-garden.html" class="card" data-game="grow-a-garden">
+      Grow a Garden <span class="heart">♡</span>
+    </a>
+
+    <a href="games/Drift-Boss.html" class="card" data-game="drift-boss">
+      Drift Boss <span class="heart">♡</span>
+    </a>
+
+    <a href="games/Run-3.html" class="card" data-game="run-3">
+      Run 3 <span class="heart">♡</span>
+    </a>
 
     <a href="games/Eaglecraft.html" class="card" data-game="eaglecraft">
-    Minecraft
-    <span class="heart">♡</span>
-  </a>
+      Minecraft <span class="heart">♡</span>
+    </a>
+
+  </div>
+
+  <p id="no-results">No games found 🤷</p>
+
 </div>
 
-<script>
-// Search functionality
-const searchIcon = document.getElementById('search-icon');
-const searchInput = document.getElementById('search');
-const gameCards = document.querySelectorAll('.games .card');
-
-searchIcon.addEventListener('click', () => {
-  searchInput.classList.toggle('show');
-  if (searchInput.classList.contains('show')) searchInput.focus();
-});
-
-searchInput.addEventListener('input', () => {
-  const query = searchInput.value.toLowerCase();
-  gameCards.forEach(card => {
-    const title = card.textContent.toLowerCase();
-    card.style.display = title.includes(query) ? '' : 'none';
-  });
-});
-
-// Favorites functionality
-document.addEventListener('DOMContentLoaded', () => {
-  const hearts = document.querySelectorAll('.heart');
-  const favorites = JSON.parse(localStorage.getItem('favorites') || '[]');
-
-  hearts.forEach(heart => {
-    const card = heart.parentElement;
-    const game = card.dataset.game;
-
-    // Mark favorited hearts on page load
-    if (favorites.includes(game)) heart.classList.add('favorited');
-
-    // Toggle favorite on click
-    heart.addEventListener('click', e => {
-      e.preventDefault(); // Prevent card link click
-      heart.classList.toggle('favorited');
-
-      let updatedFavorites = JSON.parse(localStorage.getItem('favorites') || '[]');
-      if (heart.classList.contains('favorited')) {
-        if (!updatedFavorites.includes(game)) updatedFavorites.push(game);
-      } else {
-        updatedFavorites = updatedFavorites.filter(f => f !== game);
-      }
-      localStorage.setItem('favorites', JSON.stringify(updatedFavorites));
-    });
-  });
-});
-
-// Show favorites filter
-const showFavoritesBtn = document.getElementById('show-favorites');
-let showingFavorites = false;
-
-showFavoritesBtn.addEventListener('click', () => {
-  const favorites = JSON.parse(localStorage.getItem('favorites') || '[]');
-  showingFavorites = !showingFavorites;
-
-  gameCards.forEach(card => {
-    const game = card.dataset.game;
-    card.style.display = showingFavorites
-      ? favorites.includes(game) ? '' : 'none'
-      : '';
-  });
-
-  showFavoritesBtn.textContent = showingFavorites ? 'Show All Games' : 'Show Favorites Only';
-});
-
-// Dark/Light mode toggle
-const toggleThemeBtn = document.getElementById('toggle-theme');
-let darkMode = localStorage.getItem('theme') !== 'light';
-
-function applyTheme() {
-  if (darkMode) {
-    document.documentElement.style.setProperty('--bg-color', '#121212');
-    document.documentElement.style.setProperty('--card-bg', '#222');
-    document.documentElement.style.setProperty('--card-border', '#424242');
-    document.documentElement.style.setProperty('--text-color', 'white');
-    document.documentElement.style.setProperty('--hover-bg', '#151515');
-    document.documentElement.style.setProperty('--button-bg', '#222');
-    document.documentElement.style.setProperty('--button-border', '#424242');
-    document.documentElement.style.setProperty('--button-text', 'white');
-  } else {
-    document.documentElement.style.setProperty('--bg-color', '#ffffff');
-    document.documentElement.style.setProperty('--card-bg', '#f0f0f0');
-    document.documentElement.style.setProperty('--card-border', '#cccccc');
-    document.documentElement.style.setProperty('--text-color', '#121212');
-    document.documentElement.style.setProperty('--hover-bg', '#e0e0e0');
-    document.documentElement.style.setProperty('--button-bg', '#f0f0f0');
-    document.documentElement.style.setProperty('--button-border', '#cccccc');
-    document.documentElement.style.setProperty('--button-text', '#121212');
-  }
-
-  // Update search input colors
-  searchInput.style.backgroundColor = getComputedStyle(document.documentElement).getPropertyValue('--button-bg');
-  searchInput.style.color = getComputedStyle(document.documentElement).getPropertyValue('--button-text');
-  searchInput.style.borderColor = getComputedStyle(document.documentElement).getPropertyValue('--button-border');
-}
-
-// Apply theme on load
-applyTheme();
-
-// Toggle theme on click
-toggleThemeBtn.addEventListener('click', () => {
-  darkMode = !darkMode;
-  localStorage.setItem('theme', darkMode ? 'dark' : 'light');
-  applyTheme();
-});
-</script>
+<!-- Toast -->
+<div id="toast"></div>
 
 </body>
 </html>

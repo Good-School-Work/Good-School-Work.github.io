@@ -40,47 +40,75 @@
     window.logout = () => signOut(auth);
 
     // ─── Email/Password Auth ─────────────────────────────────────────────────
-    window.emailLogin = async () => {
-      const email = document.getElementById('email-input').value.trim();
-      const pass  = document.getElementById('password-input').value;
-      const err   = document.getElementById('email-auth-error');
+    let isSignUpMode = false;
+
+    window.toggleAuthMode = () => {
+      isSignUpMode = !isSignUpMode;
+      const btn = document.getElementById('email-submit-btn');
+      const toggle = document.getElementById('auth-mode-toggle');
+      const err = document.getElementById('email-auth-error');
       err.textContent = '';
-      if (!email || !pass) { err.textContent = 'Please enter email and password.'; return; }
-      try {
-        await signInWithEmailAndPassword(auth, email, pass);
-      } catch (e) {
-        if (e.code === 'auth/user-not-found' || e.code === 'auth/invalid-credential') {
-          err.textContent = 'No account found. Click "Sign Up" to create one.';
-        } else if (e.code === 'auth/wrong-password') {
-          err.textContent = 'Wrong password. Try again.';
-        } else if (e.code === 'auth/invalid-email') {
-          err.textContent = 'Invalid email address.';
-        } else {
-          err.textContent = e.message;
-        }
+      if (isSignUpMode) {
+        btn.textContent = 'Create Account';
+        toggle.innerHTML = 'Already have an account? <a href="#" onclick="toggleAuthMode(); return false;">Sign in</a>';
+      } else {
+        btn.textContent = 'Sign In';
+        toggle.innerHTML = 'Don\'t have an account? <a href="#" onclick="toggleAuthMode(); return false;">Create one</a>';
       }
     };
 
-    window.emailSignUp = async () => {
+    window.emailSubmit = async () => {
       const email = document.getElementById('email-input').value.trim();
       const pass  = document.getElementById('password-input').value;
       const err   = document.getElementById('email-auth-error');
+      const btn   = document.getElementById('email-submit-btn');
       err.textContent = '';
-      if (!email || !pass) { err.textContent = 'Please enter email and password.'; return; }
-      if (pass.length < 6) { err.textContent = 'Password must be at least 6 characters.'; return; }
+
+      if (!email) { err.textContent = 'Please enter your email.'; return; }
+      if (!pass) { err.textContent = 'Please enter your password.'; return; }
+
+      btn.disabled = true;
+      btn.textContent = isSignUpMode ? 'Creating...' : 'Signing in...';
+
       try {
-        await createUserWithEmailAndPassword(auth, email, pass);
-        showToast('Account created!');
-      } catch (e) {
-        if (e.code === 'auth/email-already-in-use') {
-          err.textContent = 'Account already exists. Click "Sign In" instead.';
-        } else if (e.code === 'auth/invalid-email') {
-          err.textContent = 'Invalid email address.';
-        } else if (e.code === 'auth/weak-password') {
-          err.textContent = 'Password is too weak (min 6 characters).';
+        if (isSignUpMode) {
+          if (pass.length < 6) { err.textContent = 'Password must be at least 6 characters.'; return; }
+          await createUserWithEmailAndPassword(auth, email, pass);
+          showToast('Account created!');
         } else {
-          err.textContent = e.message;
+          await signInWithEmailAndPassword(auth, email, pass);
         }
+      } catch (e) {
+        switch (e.code) {
+          case 'auth/invalid-credential':
+          case 'auth/wrong-password':
+            err.textContent = 'Wrong password. Please try again.';
+            break;
+          case 'auth/user-not-found':
+            err.textContent = 'No account with this email. Create one below.';
+            isSignUpMode = false;
+            toggleAuthMode();
+            break;
+          case 'auth/email-already-in-use':
+            err.textContent = 'This email already has an account. Sign in instead.';
+            isSignUpMode = true;
+            toggleAuthMode();
+            break;
+          case 'auth/invalid-email':
+            err.textContent = 'Please enter a valid email address.';
+            break;
+          case 'auth/weak-password':
+            err.textContent = 'Password is too weak — use at least 6 characters.';
+            break;
+          case 'auth/too-many-requests':
+            err.textContent = 'Too many attempts. Please wait a moment and try again.';
+            break;
+          default:
+            err.textContent = e.message;
+        }
+      } finally {
+        btn.disabled = false;
+        btn.textContent = isSignUpMode ? 'Create Account' : 'Sign In';
       }
     };
 
@@ -410,22 +438,21 @@
   <div class="login-box">
     <h1>🎮 Unblocked Games</h1>
     <p>Sign in to save your favorites & settings</p>
-    <button onclick="login()">
-      <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"/><path fill="#FF3D00" d="m6.306 14.691 6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 16.318 4 9.656 8.337 6.306 14.691z"/><path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238A11.91 11.91 0 0 1 24 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z"/><path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303a12.04 12.04 0 0 1-4.087 5.571l.003-.002 6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z"/></svg>
-      Sign in with Google
-    </button>
-
-    <div class="login-divider"><span>or</span></div>
 
     <div class="email-auth-form">
       <input type="email" id="email-input" placeholder="Email address" class="auth-input" />
-      <input type="password" id="password-input" placeholder="Password" class="auth-input" />
+      <input type="password" id="password-input" placeholder="Password" class="auth-input" onkeydown="if(event.key==='Enter')emailSubmit()" />
       <div id="email-auth-error" class="auth-error"></div>
-      <div class="email-auth-buttons">
-        <button onclick="emailLogin()" class="auth-btn">Sign In</button>
-        <button onclick="emailSignUp()" class="auth-btn auth-btn-secondary">Sign Up</button>
-      </div>
+      <button onclick="emailSubmit()" class="auth-btn" id="email-submit-btn">Sign In</button>
+      <p id="auth-mode-toggle" class="auth-toggle">Don't have an account? <a href="#" onclick="toggleAuthMode(); return false;">Create one</a></p>
     </div>
+
+    <div class="login-divider"><span>or</span></div>
+
+    <button onclick="login()" class="google-btn">
+      <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"/><path fill="#FF3D00" d="m6.306 14.691 6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 16.318 4 9.656 8.337 6.306 14.691z"/><path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238A11.91 11.91 0 0 1 24 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z"/><path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303a12.04 12.04 0 0 1-4.087 5.571l.003-.002 6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z"/></svg>
+      Sign in with Google
+    </button>
   </div>
 </div>
 

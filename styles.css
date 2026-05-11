@@ -70,7 +70,7 @@
       color: white;
       box-shadow: 0 0 60px rgba(108,99,255,0.2), 0 20px 60px rgba(0,0,0,0.5);
       animation: fadeUp 0.5s ease;
-      max-width: 340px;
+      max-width: 380px;
       width: 90%;
     }
 
@@ -83,13 +83,13 @@
       -webkit-text-fill-color: transparent;
     }
 
-    .login-box p {
+    .login-box > p {
       color: #888;
       margin-bottom: 28px;
       font-size: 0.95em;
     }
 
-    .login-box button {
+    .google-btn {
       display: flex;
       align-items: center;
       justify-content: center;
@@ -107,7 +107,7 @@
       transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
     }
 
-    .login-box button:hover {
+    .google-btn:hover {
       background: #2d2d2d;
       transform: translateY(-2px);
       box-shadow: 0 6px 20px rgba(108,99,255,0.25);
@@ -117,7 +117,7 @@
     .login-divider {
       display: flex;
       align-items: center;
-      margin: 20px 0 16px;
+      margin: 18px 0;
       color: #666;
       font-size: 13px;
       font-weight: 700;
@@ -160,25 +160,25 @@
 
     .auth-error {
       color: #ff4444;
-      font-size: 12px;
+      font-size: 13px;
       font-weight: 700;
-      min-height: 16px;
+      min-height: 18px;
+      padding: 2px 4px;
+      text-align: left;
     }
-
-    .email-auth-buttons {
-      display: flex;
-      gap: 8px;
+    .auth-error:empty {
+      display: none;
     }
 
     .auth-btn {
-      flex: 1;
-      padding: 11px 16px;
+      width: 100%;
+      padding: 13px 16px;
       border-radius: 10px;
-      border: 1px solid #3a3a3a;
+      border: none;
       background: #6c63ff;
       color: white;
       font-family: 'Nunito', sans-serif;
-      font-size: 14px;
+      font-size: 15px;
       font-weight: 700;
       cursor: pointer;
       transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
@@ -188,13 +188,24 @@
       transform: translateY(-2px);
       box-shadow: 0 6px 20px rgba(108,99,255,0.25);
     }
-
-    .auth-btn-secondary {
-      background: #222;
-      border: 1px solid #3a3a3a;
+    .auth-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
     }
-    .auth-btn-secondary:hover {
-      background: #2d2d2d;
+
+    .auth-toggle {
+      font-size: 13px;
+      color: #888;
+      margin-top: 4px;
+    }
+    .auth-toggle a {
+      color: #6c63ff;
+      text-decoration: none;
+      font-weight: 700;
+    }
+    .auth-toggle a:hover {
+      text-decoration: underline;
     }
 
     @keyframes fadeUp {

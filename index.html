@@ -5,20 +5,20 @@
   <title>School Work</title>
   <link rel="icon" type="image/png" href="images/Icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
     import {
       getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
-      createUserWithEmailAndPassword, signInWithEmailAndPassword
+      createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
     import {
-      getFirestore, doc, getDoc, setDoc, updateDoc, collection, getDocs
+      getFirestore, doc, getDoc, setDoc, updateDoc, collection, getDocs, increment
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-    // ─── Firebase config ────────────────────────────────────────────────────────
+    /* ── CONFIG ─────────────────────────────────────────────────────────────── */
     const firebaseConfig = {
       apiKey: "AIzaSyCoK5dtkZwEIo0-1RqqaT3PAI0gUpBLLDQ",
       authDomain: "good-school-work.github.io",
@@ -27,344 +27,532 @@
       messagingSenderId: "111606118885",
       appId: "1:111606118885:web:d492e59aa0661e2543d70c"
     };
-
     const ADMIN_EMAILS = ["dragon.playz933@gmail.com", "ehanahmad@tahuna.school.nz"];
 
-    const app  = initializeApp(firebaseConfig);
-    const auth = getAuth(app);
-    const db   = getFirestore(app);
+    /* ── GAME DEFINITIONS ───────────────────────────────────────────────────── */
+    const GAMES = [
+      { id:"snowrider",        name:"Snow Rider",       href:"games/snowrider.html",        category:"racing",   emoji:"🏔️", c1:"#74b9ff", c2:"#0984e3", newUntil:null },
+      { id:"gate-solitaire",   name:"Gate Solitaire",   href:"games/Gate-Solitare.html",    category:"puzzle",   emoji:"🃏",  c1:"#a29bfe", c2:"#6c5ce7", newUntil:null },
+      { id:"infinite-craft",   name:"Infinite Craft",   href:"games/Infinite-Craft.html",   category:"creative", emoji:"⚗️", c1:"#fd79a8", c2:"#e84393", newUntil:null },
+      { id:"hexagon-race",     name:"Hexagon Race",     href:"games/Hexagon-race.html",     category:"racing",   emoji:"⬡",  c1:"#00cec9", c2:"#00b894", newUntil:null },
+      { id:"geometry-dash",    name:"Geometry Dash",    href:"games/Geometry-Dash.html",    category:"action",   emoji:"🔷", c1:"#fdcb6e", c2:"#e17055", newUntil:null },
+      { id:"steal-a-brainrot", name:"Steal a Brainrot", href:"games/Steal-a-Brainrot.html", category:"casual",   emoji:"🧠", c1:"#ff7675", c2:"#d63031", newUntil:null },
+      { id:"grow-a-garden",    name:"Grow a Garden",    href:"games/grow-a-garden.html",    category:"casual",   emoji:"🌱", c1:"#55efc4", c2:"#00b894", newUntil:"2026-06-01" },
+      { id:"drift-boss",       name:"Drift Boss",       href:"games/Drift-Boss.html",       category:"racing",   emoji:"🚗", c1:"#ffeaa7", c2:"#e17055", newUntil:null },
+      { id:"run-3",            name:"Run 3",            href:"games/Run-3.html",            category:"action",   emoji:"🏃", c1:"#ee0979", c2:"#ff6a00", newUntil:null },
+      { id:"eaglecraft",       name:"Minecraft",        href:"games/Eaglecraft.html",       category:"creative", emoji:"⛏️", c1:"#81b214", c2:"#206a5d", newUntil:null },
+    ];
+    const CATEGORIES = ["all","racing","puzzle","action","creative","casual"];
+
+    /* ── FIREBASE INIT ──────────────────────────────────────────────────────── */
+    const app      = initializeApp(firebaseConfig);
+    const auth     = getAuth(app);
+    const db       = getFirestore(app);
     const provider = new GoogleAuthProvider();
 
-    // Expose login/logout globally
-    window.login  = () => signInWithPopup(auth, provider);
-    window.logout = () => signOut(auth);
+    /* ── STATE ──────────────────────────────────────────────────────────────── */
+    let userData       = {};
+    let gameStats      = {};
+    let dark           = true;
+    let showingFavs    = false;
+    let activeCategory = "all";
+    let searchQuery    = "";
+    let isSignUpMode   = false;
 
-    // ─── Email/Password Auth ─────────────────────────────────────────────────
-    let isSignUpMode = false;
+    /* ── HELPERS ────────────────────────────────────────────────────────────── */
+    function showToast(msg, ms = 2400) {
+      const t = document.getElementById("toast");
+      t.textContent = msg;
+      t.classList.add("show");
+      clearTimeout(t._t);
+      t._t = setTimeout(() => t.classList.remove("show"), ms);
+    }
+    function formatCount(n) { return n >= 1000 ? (n/1000).toFixed(1)+"k" : String(n); }
+    function isNew(d)       { return d && new Date() < new Date(d); }
 
-    window.toggleAuthMode = () => {
-      isSignUpMode = !isSignUpMode;
-      const btn = document.getElementById('email-submit-btn');
-      const toggle = document.getElementById('auth-mode-toggle');
-      const err = document.getElementById('email-auth-error');
-      err.textContent = '';
-      if (isSignUpMode) {
-        btn.textContent = 'Create Account';
-        toggle.innerHTML = 'Already have an account? <a href="#" onclick="toggleAuthMode(); return false;">Sign in</a>';
-      } else {
-        btn.textContent = 'Sign In';
-        toggle.innerHTML = 'Don\'t have an account? <a href="#" onclick="toggleAuthMode(); return false;">Create one</a>';
-      }
-    };
+    /* ── EMAIL / PASSWORD AUTH ──────────────────────────────────────────────── */
+    function setAuthMode(signup) {
+      isSignUpMode = signup;
+      const btn    = document.getElementById("email-submit-btn");
+      const toggle = document.getElementById("auth-mode-toggle");
+      document.getElementById("email-auth-error").textContent = "";
+      btn.textContent    = signup ? "Create Account" : "Sign In";
+      toggle.innerHTML   = signup
+        ? `Already have an account? <a href="#" onclick="toggleAuthMode();return false;">Sign in</a>`
+        : `Don't have an account? <a href="#" onclick="toggleAuthMode();return false;">Create one</a>`;
+    }
+    window.toggleAuthMode = () => setAuthMode(!isSignUpMode);
 
     window.emailSubmit = async () => {
-      const email = document.getElementById('email-input').value.trim();
-      const pass  = document.getElementById('password-input').value;
-      const err   = document.getElementById('email-auth-error');
-      const btn   = document.getElementById('email-submit-btn');
-      err.textContent = '';
+      const email = document.getElementById("email-input").value.trim();
+      const pass  = document.getElementById("password-input").value;
+      const err   = document.getElementById("email-auth-error");
+      const btn   = document.getElementById("email-submit-btn");
+      err.textContent = "";
 
-      if (!email) { err.textContent = 'Please enter your email.'; return; }
-      if (!pass) { err.textContent = 'Please enter your password.'; return; }
+      if (!email)                        { err.textContent = "Please enter your email address."; return; }
+      if (!/\S+@\S+\.\S+/.test(email))   { err.textContent = "Please enter a valid email address."; return; }
+      if (!pass)                         { err.textContent = "Please enter your password."; return; }
+      if (isSignUpMode && pass.length < 6){ err.textContent = "Password must be at least 6 characters."; return; }
 
       btn.disabled = true;
-      btn.textContent = isSignUpMode ? 'Creating...' : 'Signing in...';
+      btn.textContent = isSignUpMode ? "Creating…" : "Signing in…";
 
       try {
         if (isSignUpMode) {
-          if (pass.length < 6) { err.textContent = 'Password must be at least 6 characters.'; return; }
           await createUserWithEmailAndPassword(auth, email, pass);
-          showToast('Account created!');
+          showToast("🎉 Account created! Welcome!");
         } else {
           await signInWithEmailAndPassword(auth, email, pass);
         }
       } catch (e) {
         switch (e.code) {
-          case 'auth/invalid-credential':
-          case 'auth/wrong-password':
-            err.textContent = 'Wrong password. Please try again.';
-            break;
-          case 'auth/user-not-found':
-            err.textContent = 'No account with this email. Create one below.';
-            isSignUpMode = false;
-            toggleAuthMode();
-            break;
-          case 'auth/email-already-in-use':
-            err.textContent = 'This email already has an account. Sign in instead.';
-            isSignUpMode = true;
-            toggleAuthMode();
-            break;
-          case 'auth/invalid-email':
-            err.textContent = 'Please enter a valid email address.';
-            break;
-          case 'auth/weak-password':
-            err.textContent = 'Password is too weak — use at least 6 characters.';
-            break;
-          case 'auth/too-many-requests':
-            err.textContent = 'Too many attempts. Please wait a moment and try again.';
-            break;
-          default:
-            err.textContent = e.message;
+          case "auth/invalid-credential":
+          case "auth/wrong-password":      err.textContent = "Wrong password — try again."; break;
+          case "auth/user-not-found":      err.textContent = "No account with that email — create one below."; setAuthMode(true); break;
+          case "auth/email-already-in-use":err.textContent = "That email already has an account — sign in instead."; setAuthMode(false); break;
+          case "auth/invalid-email":       err.textContent = "Please enter a valid email address."; break;
+          case "auth/weak-password":       err.textContent = "Password is too weak — use at least 6 characters."; break;
+          case "auth/too-many-requests":   err.textContent = "Too many attempts. Wait a moment and try again."; break;
+          case "auth/network-request-failed": err.textContent = "Network error — check your connection."; break;
+          default:                         err.textContent = "Something went wrong. Please try again.";
         }
       } finally {
-        btn.disabled = false;
-        btn.textContent = isSignUpMode ? 'Create Account' : 'Sign In';
+        btn.disabled    = false;
+        btn.textContent = isSignUpMode ? "Create Account" : "Sign In";
       }
     };
 
-    // ─── Helpers ─────────────────────────────────────────────────────────────────
-    function showToast(msg, dur = 2200) {
-      const t = document.getElementById("toast");
-      t.textContent = msg;
-      t.classList.add("show");
-      setTimeout(() => t.classList.remove("show"), dur);
+    /* ── FORGOT PASSWORD ────────────────────────────────────────────────────── */
+    window.showForgot = () => {
+      document.getElementById("auth-form").style.display  = "none";
+      document.getElementById("forgot-form").style.display = "flex";
+      document.getElementById("forgot-error").textContent = "";
+      document.getElementById("forgot-result").textContent = "";
+      document.getElementById("forgot-email").value = document.getElementById("email-input").value || "";
+    };
+
+    window.hideForgot = () => {
+      document.getElementById("auth-form").style.display  = "flex";
+      document.getElementById("forgot-form").style.display = "none";
+    };
+
+    window.sendReset = async () => {
+      const email  = document.getElementById("forgot-email").value.trim();
+      const err    = document.getElementById("forgot-error");
+      const result = document.getElementById("forgot-result");
+      const btn    = document.getElementById("forgot-submit-btn");
+      err.textContent = ""; result.textContent = "";
+
+      if (!email)                      { err.textContent = "Please enter your email address."; return; }
+      if (!/\S+@\S+\.\S+/.test(email)) { err.textContent = "Please enter a valid email address."; return; }
+
+      btn.disabled = true; btn.textContent = "Sending…";
+      try {
+        await sendPasswordResetEmail(auth, email);
+        result.textContent = "✅ Reset link sent! Check your inbox (and spam folder).";
+      } catch (e) {
+        switch (e.code) {
+          case "auth/user-not-found":    err.textContent = "No account found with that email."; break;
+          case "auth/invalid-email":     err.textContent = "Please enter a valid email address."; break;
+          case "auth/too-many-requests": err.textContent = "Too many requests. Try again later."; break;
+          default:                       err.textContent = "Failed to send reset email. Try again.";
+        }
+      } finally {
+        btn.disabled = false; btn.textContent = "Send Reset Link";
+      }
+    };
+
+    /* ── GOOGLE SIGN IN ─────────────────────────────────────────────────────── */
+    window.login = async () => {
+      const err = document.getElementById("email-auth-error");
+      try {
+        await signInWithPopup(auth, provider);
+      } catch (e) {
+        if (e.code === "auth/popup-closed-by-user" || e.code === "auth/cancelled-popup-request") return;
+        if (e.code === "auth/popup-blocked")           { err.textContent = "Popup blocked — please allow popups for this site."; return; }
+        if (e.code === "auth/network-request-failed")  { err.textContent = "Network error — check your connection."; return; }
+        err.textContent = "Google sign-in failed. Please try again.";
+      }
+    };
+
+    /* ── DISPLAY NAME ───────────────────────────────────────────────────────── */
+    function updateNameChip() {
+      const chip = document.getElementById("user-name-chip");
+      if (!chip) return;
+      const name = userData.displayName || auth.currentUser?.email?.split("@")[0] || "Me";
+      chip.textContent = "👤 " + name;
     }
 
-    // ─── Create user doc if needed ───────────────────────────────────────────────
-    async function ensureUser(user) {
-      const ref  = doc(db, "users", user.uid);
-      const snap = await getDoc(ref);
-      if (!snap.exists()) {
-        await setDoc(ref, {
-          email:     user.email,
-          favorites: [],
-          theme:     "dark",
-          banned:    false,
-          isAdmin:   ADMIN_EMAILS.includes(user.email)
+    window.openNameModal = () => {
+      document.getElementById("name-input").value = userData.displayName || "";
+      document.getElementById("name-error").textContent = "";
+      document.getElementById("name-modal").style.display = "flex";
+    };
+
+    window.closeNameModal = () => {
+      document.getElementById("name-modal").style.display = "none";
+    };
+
+    window.saveName = async () => {
+      const name = document.getElementById("name-input").value.trim();
+      const err  = document.getElementById("name-error");
+      if (!name)          { err.textContent = "Please enter a name."; return; }
+      if (name.length > 24){ err.textContent = "Name must be 24 characters or less."; return; }
+      const user = auth.currentUser;
+      if (!user) return;
+      await updateDoc(doc(db, "users", user.uid), { displayName: name });
+      userData.displayName = name;
+      updateNameChip();
+      closeNameModal();
+      showToast("✅ Display name updated!");
+    };
+
+    /* ── RENDER GAME CARDS ──────────────────────────────────────────────────── */
+    function renderGames() {
+      document.getElementById("games-grid").innerHTML = GAMES.map(g => `
+        <a href="${g.href}" class="card" data-game="${g.id}" data-category="${g.category}">
+          <div class="card-thumb" style="background:linear-gradient(135deg,${g.c1},${g.c2})">
+            <span class="card-emoji">${g.emoji}</span>
+            ${isNew(g.newUntil) ? '<span class="badge-new">NEW</span>' : ""}
+            <span class="heart">♡</span>
+          </div>
+          <div class="card-body">
+            <div class="card-name">${g.name}</div>
+            <div class="card-stars" data-game="${g.id}">
+              ${[1,2,3,4,5].map(i=>`<span class="star" data-star="${i}">★</span>`).join("")}
+            </div>
+            <div class="card-plays" data-game="${g.id}">🎮 0 plays</div>
+          </div>
+        </a>`).join("");
+    }
+
+    /* ── GAME STATS ─────────────────────────────────────────────────────────── */
+    async function loadGameStats() {
+      try {
+        const snap = await getDocs(collection(db, "games"));
+        snap.forEach(d => { gameStats[d.id] = d.data(); });
+        GAMES.forEach(g => updateGameStatUI(g.id));
+      } catch(e) { console.warn("Stats load failed", e); }
+    }
+
+    function updateGameStatUI(gameId) {
+      const s     = gameStats[gameId] || {};
+      const plays = s.playCount   || 0;
+      const total = s.totalRating || 0;
+      const cnt   = s.ratingCount || 0;
+      const avg   = cnt > 0 ? total / cnt : 0;
+      const mine  = userData.ratings?.[gameId] || 0;
+
+      const pe = document.querySelector(`.card-plays[data-game="${gameId}"]`);
+      if (pe) pe.textContent = `🎮 ${formatCount(plays)} play${plays===1?"":"s"}`;
+
+      const se = document.querySelector(`.card-stars[data-game="${gameId}"]`);
+      if (se) {
+        const shown = mine || avg;
+        se.querySelectorAll(".star").forEach((s,i) => {
+          s.classList.toggle("filled",     (i+1) <= Math.round(shown));
+          s.classList.toggle("user-rated", (i+1) <= mine);
         });
-      } else {
-        // Promote to admin if in list but flag not set yet
-        const d = snap.data();
-        if (ADMIN_EMAILS.includes(user.email) && !d.isAdmin) {
-          await updateDoc(ref, { isAdmin: true });
-        }
+        se.title = cnt > 0
+          ? `Avg: ${avg.toFixed(1)}/5 (${cnt} rating${cnt===1?"":"s"})${mine ? " · Yours: "+mine : ""}`
+          : "No ratings yet — be first!";
       }
     }
 
-    // ─── FAVORITES (cloud-synced, per-account) ──────────────────────────────────
-    let currentFavs = [];
-
-    async function loadFavorites(user) {
-      const snap = await getDoc(doc(db, "users", user.uid));
-      currentFavs = snap.data()?.favorites || [];
-      renderFavorites();
+    async function incrementPlayCount(gameId) {
+      try {
+        await setDoc(doc(db,"games",gameId), { playCount: increment(1) }, { merge:true });
+        if (!gameStats[gameId]) gameStats[gameId] = {};
+        gameStats[gameId].playCount = (gameStats[gameId].playCount||0) + 1;
+        updateGameStatUI(gameId);
+      } catch(e) { console.warn(e); }
     }
 
+    async function rateGame(user, gameId, stars) {
+      try {
+        const existing = userData.ratings?.[gameId] || 0;
+        if (existing === stars) { showToast("You already gave that rating!"); return; }
+        await updateDoc(doc(db,"users",user.uid), { [`ratings.${gameId}`]: stars });
+        if (!userData.ratings) userData.ratings = {};
+        userData.ratings[gameId] = stars;
+        if (existing) {
+          await setDoc(doc(db,"games",gameId), { totalRating: increment(stars-existing) }, { merge:true });
+          if (!gameStats[gameId]) gameStats[gameId] = {};
+          gameStats[gameId].totalRating = (gameStats[gameId].totalRating||0) + (stars-existing);
+        } else {
+          await setDoc(doc(db,"games",gameId), { totalRating: increment(stars), ratingCount: increment(1) }, { merge:true });
+          if (!gameStats[gameId]) gameStats[gameId] = {};
+          gameStats[gameId].totalRating = (gameStats[gameId].totalRating||0) + stars;
+          gameStats[gameId].ratingCount = (gameStats[gameId].ratingCount||0) + 1;
+        }
+        updateGameStatUI(gameId);
+        showToast(`⭐ Rated ${stars}/5!`);
+      } catch(e) { showToast("Couldn't save rating."); }
+    }
+
+    /* ── FAVORITES ──────────────────────────────────────────────────────────── */
     function renderFavorites() {
+      const favs = userData.favorites || [];
       document.querySelectorAll(".heart").forEach(h => {
-        const game = h.parentElement.dataset.game;
-        h.classList.toggle("favorited", currentFavs.includes(game));
+        const id = h.closest(".card")?.dataset.game;
+        const on = favs.includes(id);
+        h.classList.toggle("favorited", on);
+        h.textContent = on ? "♥" : "♡";
       });
     }
 
-    async function toggleFavorite(user, game) {
-      const ref  = doc(db, "users", user.uid);
-      const snap = await getDoc(ref);
-      let favs   = snap.data()?.favorites || [];
-      const added = !favs.includes(game);
-      favs = added ? [...favs, game] : favs.filter(f => f !== game);
-      await updateDoc(ref, { favorites: favs });
-      currentFavs = favs;
+    async function toggleFavorite(user, gameId) {
+      let favs = [...(userData.favorites||[])];
+      const add = !favs.includes(gameId);
+      favs = add ? [...favs,gameId] : favs.filter(f=>f!==gameId);
+      userData.favorites = favs;
       renderFavorites();
-      showToast(added ? "❤️ Added to favorites" : "💔 Removed from favorites");
-      if (showingFavs) filterFavorites(true);
+      if (showingFavs) applyFilters();
+      try {
+        await updateDoc(doc(db,"users",user.uid), { favorites: favs });
+        showToast(add ? "❤️ Added to favorites" : "💔 Removed from favorites");
+      } catch(e) { console.error(e); }
     }
 
-    // ─── THEME ───────────────────────────────────────────────────────────────────
-    let dark = true;
+    /* ── RECENTLY PLAYED ────────────────────────────────────────────────────── */
+    function renderRecentlyPlayed() {
+      const recent  = userData.recentlyPlayed || [];
+      const section = document.getElementById("recently-played");
+      const row     = document.getElementById("recent-row");
+      if (!recent.length) { section.style.display="none"; return; }
+      section.style.display = "block";
+      row.innerHTML = recent.map(id => {
+        const g = GAMES.find(x=>x.id===id);
+        if (!g) return "";
+        return `<a href="${g.href}" class="recent-card" data-game="${g.id}">
+          <div class="recent-thumb" style="background:linear-gradient(135deg,${g.c1},${g.c2})">${g.emoji}</div>
+          <div class="recent-name">${g.name}</div>
+        </a>`;
+      }).join("");
+    }
 
+    async function addRecentlyPlayed(user, gameId) {
+      let r = [...(userData.recentlyPlayed||[])];
+      r = [gameId, ...r.filter(g=>g!==gameId)].slice(0,5);
+      userData.recentlyPlayed = r;
+      renderRecentlyPlayed();
+      updateDoc(doc(db,"users",user.uid), { recentlyPlayed: r }).catch(()=>{});
+    }
+
+    /* ── THEME ──────────────────────────────────────────────────────────────── */
     function applyTheme(isDark) {
       dark = isDark;
-      document.documentElement.classList.toggle("light", !isDark);
+      document.documentElement.classList.toggle("light", !dark);
     }
-
     function toggleTheme() {
       applyTheme(!dark);
-      const user = auth.currentUser;
-      if (user) updateDoc(doc(db, "users", user.uid), { theme: dark ? "dark" : "light" }).catch(() => {});
+      const u = auth.currentUser;
+      if (u) updateDoc(doc(db,"users",u.uid), { theme: dark?"dark":"light" }).catch(()=>{});
     }
 
-    // ─── FAVORITES FILTER ────────────────────────────────────────────────────────
-    let showingFavs = false;
-
-    function filterFavorites(force) {
-      if (force === undefined) {
-        showingFavs = !showingFavs;
-      }
-      const btn = document.getElementById("show-favorites");
-      btn.textContent = showingFavs ? "Show All" : "⭐ Favorites";
+    /* ── FILTERS ────────────────────────────────────────────────────────────── */
+    function applyFilters() {
+      const favs = userData.favorites || [];
+      let visible = 0;
       document.querySelectorAll(".card").forEach(card => {
-        const game = card.dataset.game;
-        if (showingFavs) {
-          card.classList.toggle("fav-hidden", !currentFavs.includes(game));
-        } else {
-          card.classList.remove("fav-hidden");
-        }
+        const name   = card.querySelector(".card-name").textContent.toLowerCase();
+        const matchQ = name.includes(searchQuery);
+        const matchC = activeCategory==="all" || card.dataset.category===activeCategory;
+        const matchF = !showingFavs || favs.includes(card.dataset.game);
+        const show   = matchQ && matchC && matchF;
+        card.style.display = show ? "" : "none";
+        if (show) visible++;
       });
+      document.getElementById("no-results").style.display = visible===0 ? "block" : "none";
     }
 
-    // ─── SEARCH ──────────────────────────────────────────────────────────────────
-    function initSearch() {
-      const icon  = document.getElementById("search-icon");
-      const input = document.getElementById("search");
-      const cards = document.querySelectorAll(".card");
-      const noRes = document.getElementById("no-results");
-
-      icon.addEventListener("click", () => {
-        input.classList.toggle("show");
-        if (input.classList.contains("show")) input.focus();
-      });
-
-      input.addEventListener("input", () => {
-        const q = input.value.toLowerCase();
-        let visible = 0;
-        cards.forEach(card => {
-          const match = card.textContent.toLowerCase().includes(q);
-          card.classList.toggle("hidden", !match);
-          if (match) visible++;
-        });
-        noRes.style.display = visible === 0 ? "block" : "none";
-      });
+    function setCategory(cat) {
+      activeCategory = cat;
+      document.querySelectorAll(".cat-btn").forEach(b => b.classList.toggle("active", b.dataset.cat===cat));
+      applyFilters();
     }
 
-    // ─── ADMIN PANEL ─────────────────────────────────────────────────────────────
-    let adminTab = "users";
-
-    function openAdmin() {
-      document.getElementById("admin-overlay").classList.add("open");
-      loadAdminTab("users");
+    function toggleFavFilter() {
+      showingFavs = !showingFavs;
+      document.getElementById("show-favorites").textContent = showingFavs ? "Show All" : "⭐ Favorites";
+      applyFilters();
     }
 
-    function closeAdmin() {
-      document.getElementById("admin-overlay").classList.remove("open");
+    /* ── ANNOUNCEMENT BANNER ────────────────────────────────────────────────── */
+    async function loadAnnouncement() {
+      try {
+        const snap = await getDoc(doc(db,"announcements","active"));
+        if (snap.exists() && snap.data().active && snap.data().message)
+          showBanner(snap.data().message);
+      } catch(_) {}
+    }
+    function showBanner(msg) {
+      document.getElementById("announcement-text").textContent = msg;
+      document.getElementById("announcement-bar").style.display = "flex";
     }
 
-    function switchTab(tab) {
-      adminTab = tab;
-      document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
-      loadAdminTab(tab);
-    }
+    /* ── ADMIN PANEL ────────────────────────────────────────────────────────── */
+    function openAdmin()  { document.getElementById("admin-overlay").classList.add("open"); loadAdminTab("users"); }
+    function closeAdmin() { document.getElementById("admin-overlay").classList.remove("open"); }
 
     async function loadAdminTab(tab) {
       const body = document.getElementById("admin-body");
+
       if (tab === "users") {
         body.innerHTML = `<div class="center"><div class="spin"></div></div>`;
         try {
-          const snap = await getDocs(collection(db, "users"));
-          if (snap.empty) { body.innerHTML = `<p style="color:var(--subtext);text-align:center;margin-top:20px;">No users found.</p>`; return; }
-
+          const snap = await getDocs(collection(db,"users"));
+          if (snap.empty) { body.innerHTML=`<p style="color:var(--subtext);text-align:center;margin-top:20px;">No users found.</p>`; return; }
           const rows = [];
-          snap.forEach(d => rows.push({ id: d.id, ...d.data() }));
-
-          // Sort: admins first, then banned, then rest
-          rows.sort((a, b) => {
-            if (a.isAdmin && !b.isAdmin) return -1;
-            if (!a.isAdmin && b.isAdmin) return 1;
-            return 0;
-          });
-
-          body.innerHTML = `<div class="user-list">${rows.map(u => userRow(u)).join("")}</div>`;
-        } catch (e) {
-          body.innerHTML = `<p style="color:var(--danger);">Error loading users: ${e.message}</p>`;
-        }
+          snap.forEach(d => rows.push({ id:d.id, ...d.data() }));
+          rows.sort((a,b) => (b.isAdmin-a.isAdmin)||(a.email>b.email?1:-1));
+          body.innerHTML = `<div class="user-list">${rows.map(userRow).join("")}</div>`;
+        } catch(e) { body.innerHTML=`<p style="color:var(--danger);">Error: ${e.message}</p>`; }
 
       } else if (tab === "ban-email") {
         body.innerHTML = `
           <div class="ban-by-email">
             <label>Ban a user by email</label>
             <div class="ban-input-row">
-              <input class="admin-input" id="ban-email-input" type="email" placeholder="user@example.com" />
+              <input class="admin-input" id="ban-email-input" type="email" placeholder="user@example.com"/>
               <button class="admin-submit" id="ban-email-btn">Ban</button>
             </div>
-            <div class="admin-note">⚠️ This will search for the user by email and set their account to banned. They'll see a BANNED screen on next login.</div>
+            <div class="admin-note">⚠️ Searches Firestore for the email and sets them as banned. They'll see a BANNED screen on next login.</div>
             <div id="ban-email-result" style="margin-top:10px;font-size:13px;font-weight:700;"></div>
           </div>`;
-
         document.getElementById("ban-email-btn").addEventListener("click", async () => {
-          const email = document.getElementById("ban-email-input").value.trim().toLowerCase();
+          const email  = document.getElementById("ban-email-input").value.trim().toLowerCase();
           const result = document.getElementById("ban-email-result");
-          if (!email) { result.style.color = "var(--danger)"; result.textContent = "Please enter an email."; return; }
-
-          result.style.color = "var(--subtext)";
-          result.textContent = "Searching...";
-
-          const snap = await getDocs(collection(db, "users"));
+          if (!email) { result.style.color="var(--danger)"; result.textContent="Please enter an email."; return; }
+          result.style.color="var(--subtext)"; result.textContent="Searching...";
+          const snap = await getDocs(collection(db,"users"));
           let found = false;
           for (const d of snap.docs) {
-            if ((d.data().email || "").toLowerCase() === email) {
-              await updateDoc(doc(db, "users", d.id), { banned: true });
-              found = true;
-              result.style.color = "var(--success)";
-              result.textContent = `✅ Banned ${email}`;
-              showToast(`🚫 Banned ${email}`);
-              break;
+            if ((d.data().email||"").toLowerCase()===email) {
+              await updateDoc(doc(db,"users",d.id), { banned:true });
+              found=true; result.style.color="var(--success)"; result.textContent=`✅ Banned ${email}`; showToast(`🚫 Banned ${email}`); break;
             }
           }
-          if (!found) {
-            result.style.color = "var(--danger)";
-            result.textContent = `❌ No user found with email: ${email}`;
-          }
+          if (!found) { result.style.color="var(--danger)"; result.textContent=`❌ No account found for: ${email}`; }
+        });
+
+      } else if (tab === "stats") {
+        body.innerHTML = `<div class="center"><div class="spin"></div></div>`;
+        try {
+          const [usersSnap, gamesSnap] = await Promise.all([
+            getDocs(collection(db,"users")), getDocs(collection(db,"games"))
+          ]);
+          let totalUsers=0, banned=0, admins=0;
+          usersSnap.forEach(d => { totalUsers++; if(d.data().banned) banned++; if(d.data().isAdmin) admins++; });
+          let totalPlays=0, topName="—", topPlays=0, bestName="—", bestAvg=0;
+          gamesSnap.forEach(d => {
+            const s=d.data(), p=s.playCount||0;
+            totalPlays+=p;
+            if (p>topPlays) { topPlays=p; topName=GAMES.find(g=>g.id===d.id)?.name||d.id; }
+            const a=s.ratingCount>0?s.totalRating/s.ratingCount:0;
+            if (a>bestAvg) { bestAvg=a; bestName=GAMES.find(g=>g.id===d.id)?.name||d.id; }
+          });
+          body.innerHTML = `
+            <div class="stats-grid">
+              <div class="stat-card"><div class="stat-num">${totalUsers}</div><div class="stat-label">Total Users</div></div>
+              <div class="stat-card"><div class="stat-num" style="color:var(--danger)">${banned}</div><div class="stat-label">Banned</div></div>
+              <div class="stat-card"><div class="stat-num" style="color:var(--accent)">${admins}</div><div class="stat-label">Admins</div></div>
+              <div class="stat-card"><div class="stat-num">${formatCount(totalPlays)}</div><div class="stat-label">Total Plays</div></div>
+              <div class="stat-card stat-wide">
+                <div class="stat-icon">🎮</div>
+                <div><div class="stat-label">Most Played</div><div class="stat-value">${topName} <span class="stat-sub">(${formatCount(topPlays)} plays)</span></div></div>
+              </div>
+              <div class="stat-card stat-wide">
+                <div class="stat-icon">⭐</div>
+                <div><div class="stat-label">Highest Rated</div><div class="stat-value">${bestName} <span class="stat-sub">${bestAvg>0?"("+bestAvg.toFixed(1)+"/5)":"(no ratings yet)"}</span></div></div>
+              </div>
+            </div>`;
+        } catch(e) { body.innerHTML=`<p style="color:var(--danger);">Error: ${e.message}</p>`; }
+
+      } else if (tab === "announce") {
+        let cur="";
+        try { const s=await getDoc(doc(db,"announcements","active")); if(s.exists()) cur=s.data().message||""; } catch(_) {}
+        body.innerHTML = `
+          <div class="ban-by-email">
+            <label>Announcement Banner</label>
+            <textarea class="admin-input admin-textarea" id="announce-input" placeholder="Type a message for all users… (leave empty to hide)">${cur}</textarea>
+            <div style="display:flex;gap:10px">
+              <button class="admin-submit" id="announce-save" style="background:var(--accent)">📢 Publish</button>
+              <button class="admin-submit" id="announce-clear">✕ Clear</button>
+            </div>
+            <div class="admin-note">Shown as a banner at the top of the page for all users immediately.</div>
+            <div id="announce-result" style="margin-top:8px;font-size:13px;font-weight:700;"></div>
+          </div>`;
+        document.getElementById("announce-save").addEventListener("click", async () => {
+          const msg=document.getElementById("announce-input").value.trim();
+          const res=document.getElementById("announce-result");
+          try {
+            await setDoc(doc(db,"announcements","active"), { message:msg, active:!!msg });
+            res.style.color="var(--success)"; res.textContent=msg?"✅ Published!":"✅ Banner hidden.";
+            msg ? showBanner(msg) : (document.getElementById("announcement-bar").style.display="none");
+          } catch(e) { res.style.color="var(--danger)"; res.textContent="Error: "+e.message; }
+        });
+        document.getElementById("announce-clear").addEventListener("click", () => {
+          document.getElementById("announce-input").value="";
         });
       }
     }
 
     function userRow(u) {
-      const initials = (u.email || "?")[0].toUpperCase();
-      const isSelf   = auth.currentUser?.email === u.email;
+      const initials = (u.email||"?")[0].toUpperCase();
+      const isSelf   = auth.currentUser?.email===u.email;
       const badges   = [];
       if (u.isAdmin) badges.push(`<span class="badge admin">ADMIN</span>`);
-      if (u.banned)  badges.push(`<span class="badge banned">BANNED</span>`);
-      else           badges.push(`<span class="badge active">ACTIVE</span>`);
-
-      const actions = isSelf ? `<span style="font-size:12px;color:var(--subtext)">You</span>` : `
-        ${u.banned
-          ? `<button class="action-btn unban" onclick="window.adminUnban('${u.id}', this)">Unban</button>`
-          : `<button class="action-btn ban"   onclick="window.adminBan('${u.id}', this)">Ban</button>`
-        }`;
-
+      badges.push(u.banned
+        ? `<span class="badge banned">BANNED</span>`
+        : `<span class="badge active">ACTIVE</span>`);
+      const actions = isSelf
+        ? `<span style="font-size:12px;color:var(--subtext)">You</span>`
+        : u.banned
+          ? `<button class="action-btn unban" onclick="window.adminUnban('${u.id}',this)">Unban</button>`
+          : `<button class="action-btn ban"   onclick="window.adminBan('${u.id}',this)">Ban</button>`;
       return `
-        <div class="user-row" id="row-${u.id}">
+        <div class="user-row">
           <div class="user-avatar">${initials}</div>
           <div class="user-info">
-            <div class="user-email">${u.email || "Unknown"}</div>
+            <div class="user-email">${u.displayName ? `<strong>${u.displayName}</strong> · ` : ""}${u.email||"Unknown"}</div>
             <div class="user-meta">${badges.join(" ")}</div>
           </div>
           <div class="user-actions">${actions}</div>
         </div>`;
     }
 
-    window.adminBan = async (uid, btn) => {
-      btn.disabled = true;
-      btn.textContent = "...";
-      await updateDoc(doc(db, "users", uid), { banned: true });
-      showToast("🚫 User banned");
-      loadAdminTab("users");
-    };
+    window.adminBan   = async (uid,btn) => { btn.disabled=true; btn.textContent="…"; await updateDoc(doc(db,"users",uid),{banned:true});  showToast("🚫 Banned");   loadAdminTab("users"); };
+    window.adminUnban = async (uid,btn) => { btn.disabled=true; btn.textContent="…"; await updateDoc(doc(db,"users",uid),{banned:false}); showToast("✅ Unbanned"); loadAdminTab("users"); };
 
-    window.adminUnban = async (uid, btn) => {
-      btn.disabled = true;
-      btn.textContent = "...";
-      await updateDoc(doc(db, "users", uid), { banned: false });
-      showToast("✅ User unbanned");
-      loadAdminTab("users");
-    };
+    /* ── AUTH STATE ─────────────────────────────────────────────────────────── */
+    async function ensureUser(user) {
+      const ref  = doc(db,"users",user.uid);
+      const snap = await getDoc(ref);
+      if (!snap.exists()) {
+        await setDoc(ref, {
+          email:user.email, favorites:[], theme:"dark", banned:false,
+          isAdmin:ADMIN_EMAILS.includes(user.email), recentlyPlayed:[], ratings:{}, displayName:""
+        });
+      } else {
+        const d = snap.data();
+        if (ADMIN_EMAILS.includes(user.email) && !d.isAdmin) await updateDoc(ref,{isAdmin:true});
+      }
+    }
 
-    // ─── AUTH ────────────────────────────────────────────────────────────────────
-    onAuthStateChanged(auth, async (user) => {
+    onAuthStateChanged(auth, async user => {
       const loginScreen = document.getElementById("login-screen");
       const main        = document.getElementById("main");
 
       if (!user) {
-        loginScreen.style.display = "flex";
-        main.style.display = "none";
-        currentFavs = [];
-        showingFavs = false;
+        loginScreen.style.display="flex"; main.style.display="none";
+        userData={}; showingFavs=false;
         return;
       }
 
       await ensureUser(user);
-
-      const snap = await getDoc(doc(db, "users", user.uid));
+      const snap = await getDoc(doc(db,"users",user.uid));
       const data = snap.data();
 
       if (data.banned) {
@@ -379,95 +567,181 @@
         return;
       }
 
-      loginScreen.style.display = "none";
-      main.style.display = "block";
+      userData = data;
+      loginScreen.style.display="none";
+      main.style.display="block";
 
-      // Load theme from Firestore
       applyTheme(data.theme !== "light");
+      updateNameChip();
+      renderFavorites();
+      renderRecentlyPlayed();
+      GAMES.forEach(g => updateGameStatUI(g.id));
+      loadGameStats();
+      loadAnnouncement();
 
-      // Load favorites for THIS account
-      await loadFavorites(user);
-
-      // Show admin button if admin
-      if (data.isAdmin) {
-        document.getElementById("admin-btn").style.display = "inline-block";
-      } else {
-        document.getElementById("admin-btn").style.display = "none";
+      // Prompt for display name if none set (new users)
+      if (!data.displayName) {
+        setTimeout(() => openNameModal(), 800);
       }
+
+      document.getElementById("admin-btn").style.display = data.isAdmin ? "inline-block" : "none";
     });
 
-    // ─── DOM READY ───────────────────────────────────────────────────────────────
+    /* ── DOM READY ──────────────────────────────────────────────────────────── */
     window.addEventListener("DOMContentLoaded", () => {
-      initSearch();
+      renderGames();
 
+      // Category bar
+      const catBar = document.getElementById("category-bar");
+      catBar.innerHTML = CATEGORIES.map(c =>
+        `<button class="cat-btn${c==="all"?" active":""}" data-cat="${c}">${c==="all"?"All":c[0].toUpperCase()+c.slice(1)}</button>`
+      ).join("");
+      catBar.addEventListener("click", e => { if(e.target.classList.contains("cat-btn")) setCategory(e.target.dataset.cat); });
+
+      // Search
+      const icon  = document.getElementById("search-icon");
+      const input = document.getElementById("search");
+      icon.addEventListener("click", () => { input.classList.toggle("show"); if(input.classList.contains("show")) input.focus(); });
+      input.addEventListener("input", () => { searchQuery=input.value.toLowerCase(); applyFilters(); });
+
+      // Topbar buttons
       document.getElementById("toggle-theme").addEventListener("click", toggleTheme);
       document.getElementById("logout-btn").addEventListener("click", () => signOut(auth));
-      document.getElementById("show-favorites").addEventListener("click", () => filterFavorites());
+      document.getElementById("show-favorites").addEventListener("click", toggleFavFilter);
       document.getElementById("admin-btn").addEventListener("click", openAdmin);
+
+      // Admin
       document.getElementById("close-admin").addEventListener("click", closeAdmin);
+      document.getElementById("admin-overlay").addEventListener("click", e => { if(e.target===document.getElementById("admin-overlay")) closeAdmin(); });
+      document.querySelectorAll(".tab-btn").forEach(btn => btn.addEventListener("click", () => {
+        document.querySelectorAll(".tab-btn").forEach(b=>b.classList.remove("active"));
+        btn.classList.add("active");
+        loadAdminTab(btn.dataset.tab);
+      }));
 
-      // Close admin if clicking outside panel
-      document.getElementById("admin-overlay").addEventListener("click", (e) => {
-        if (e.target === document.getElementById("admin-overlay")) closeAdmin();
+      // Announcement dismiss
+      document.getElementById("dismiss-announcement").addEventListener("click", () => {
+        document.getElementById("announcement-bar").style.display="none";
       });
 
-      // Tab buttons
-      document.querySelectorAll(".tab-btn").forEach(btn => {
-        btn.addEventListener("click", () => switchTab(btn.dataset.tab));
+      // Name modal close on backdrop
+      document.getElementById("name-modal").addEventListener("click", e => {
+        if (e.target===document.getElementById("name-modal")) closeNameModal();
       });
 
-      // Heart clicks (event delegation)
-      document.getElementById("main").addEventListener("click", async (e) => {
-        if (!e.target.classList.contains("heart")) return;
-        e.preventDefault();
+      // Card interactions (delegation)
+      document.getElementById("games-grid").addEventListener("click", async e => {
         const user = auth.currentUser;
-        if (!user) return;
-        const game = e.target.parentElement.dataset.game;
-        await toggleFavorite(user, game);
+        if (e.target.classList.contains("heart")) {
+          e.preventDefault();
+          if (!user) return;
+          await toggleFavorite(user, e.target.closest(".card").dataset.game);
+          return;
+        }
+        if (e.target.classList.contains("star")) {
+          e.preventDefault();
+          if (!user) return;
+          await rateGame(user, e.target.closest(".card").dataset.game, parseInt(e.target.dataset.star));
+          return;
+        }
+        const card = e.target.closest(".card");
+        if (card && user) { incrementPlayCount(card.dataset.game); addRecentlyPlayed(user, card.dataset.game); }
       });
+
+      // Star hover
+      document.getElementById("games-grid").addEventListener("mouseover", e => {
+        if (!e.target.classList.contains("star")) return;
+        const n = parseInt(e.target.dataset.star);
+        e.target.closest(".card-stars")?.querySelectorAll(".star").forEach((s,i) => s.classList.toggle("hover-fill",(i+1)<=n));
+      });
+      document.getElementById("games-grid").addEventListener("mouseout", e => {
+        if (!e.target.classList.contains("star")) return;
+        e.target.closest(".card-stars")?.querySelectorAll(".star").forEach(s=>s.classList.remove("hover-fill"));
+      });
+
+      // Recently played clicks
+      document.getElementById("recent-row").addEventListener("click", async e => {
+        const card = e.target.closest(".recent-card");
+        if (card && auth.currentUser) { incrementPlayCount(card.dataset.game); addRecentlyPlayed(auth.currentUser, card.dataset.game); }
+      });
+
+      // Enter key on password
+      document.getElementById("password-input").addEventListener("keydown", e => { if(e.key==="Enter") emailSubmit(); });
+      document.getElementById("email-input").addEventListener("keydown",    e => { if(e.key==="Enter") emailSubmit(); });
     });
   </script>
 </head>
-
 <body>
 
-<!-- ═══════════════════════════════════════
-     LOGIN SCREEN
-══════════════════════════════════════════ -->
+<!-- ANNOUNCEMENT BAR -->
+<div id="announcement-bar" style="display:none;">
+  <span id="announcement-text"></span>
+  <button id="dismiss-announcement" class="dismiss-btn">✕</button>
+</div>
+
+<!-- LOGIN SCREEN -->
 <div id="login-screen">
   <div class="login-box">
     <h1>🎮 Unblocked Games</h1>
-    <p>Sign in to save your favorites & settings</p>
+    <p>Sign in to save your favorites &amp; settings</p>
 
-    <div class="email-auth-form">
-      <input type="email" id="email-input" placeholder="Email address" class="auth-input" />
-      <input type="password" id="password-input" placeholder="Password" class="auth-input" onkeydown="if(event.key==='Enter')emailSubmit()" />
+    <!-- Email / Password form -->
+    <div id="auth-form" style="display:flex;flex-direction:column;gap:10px;">
+      <input type="email"    id="email-input"    class="auth-input" placeholder="Email address" autocomplete="email"/>
+      <input type="password" id="password-input" class="auth-input" placeholder="Password"      autocomplete="current-password"/>
       <div id="email-auth-error" class="auth-error"></div>
-      <button onclick="emailSubmit()" class="auth-btn" id="email-submit-btn">Sign In</button>
-      <p id="auth-mode-toggle" class="auth-toggle">Don't have an account? <a href="#" onclick="toggleAuthMode(); return false;">Create one</a></p>
+      <button class="auth-btn" id="email-submit-btn" onclick="emailSubmit()">Sign In</button>
+      <div class="auth-bottom-row">
+        <p id="auth-mode-toggle" class="auth-toggle">Don't have an account? <a href="#" onclick="toggleAuthMode();return false;">Create one</a></p>
+        <a href="#" class="forgot-link" onclick="showForgot();return false;">Forgot password?</a>
+      </div>
+    </div>
+
+    <!-- Forgot password form -->
+    <div id="forgot-form" style="display:none;flex-direction:column;gap:10px;">
+      <p class="forgot-desc">Enter your email and we'll send a reset link.</p>
+      <input type="email" id="forgot-email" class="auth-input" placeholder="Email address" autocomplete="email"/>
+      <div id="forgot-error"  class="auth-error"></div>
+      <div id="forgot-result" class="auth-success"></div>
+      <button class="auth-btn" id="forgot-submit-btn" onclick="sendReset()">Send Reset Link</button>
+      <a href="#" class="forgot-link" onclick="hideForgot();return false;">← Back to sign in</a>
     </div>
 
     <div class="login-divider"><span>or</span></div>
 
-    <button onclick="login()" class="google-btn">
+    <button class="google-btn" onclick="login()">
       <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"/><path fill="#FF3D00" d="m6.306 14.691 6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 16.318 4 9.656 8.337 6.306 14.691z"/><path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238A11.91 11.91 0 0 1 24 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z"/><path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303a12.04 12.04 0 0 1-4.087 5.571l.003-.002 6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z"/></svg>
       Sign in with Google
     </button>
   </div>
 </div>
 
-<!-- ═══════════════════════════════════════
-     ADMIN PANEL OVERLAY
-══════════════════════════════════════════ -->
+<!-- DISPLAY NAME MODAL -->
+<div id="name-modal" style="display:none;">
+  <div class="name-modal-box">
+    <h3>👤 Set your display name</h3>
+    <p>This is shown instead of your email across the site.</p>
+    <input type="text" id="name-input" class="auth-input" placeholder="Your name (max 24 chars)" maxlength="24"/>
+    <div id="name-error" class="auth-error"></div>
+    <div style="display:flex;gap:10px;margin-top:4px;">
+      <button class="auth-btn" onclick="saveName()">Save</button>
+      <button class="auth-btn" style="background:#333;flex:0.5" onclick="closeNameModal()">Skip</button>
+    </div>
+  </div>
+</div>
+
+<!-- ADMIN OVERLAY -->
 <div id="admin-overlay">
   <div id="admin-panel">
     <div class="admin-header">
       <h2>🛡️ Admin Dashboard</h2>
-      <button class="close-btn" id="close-admin" title="Close">✕</button>
+      <button class="close-btn" id="close-admin">✕</button>
     </div>
     <div class="admin-tabs">
-      <button class="tab-btn active" data-tab="users">👥 User List</button>
+      <button class="tab-btn active" data-tab="users">👥 Users</button>
       <button class="tab-btn" data-tab="ban-email">✉️ Ban by Email</button>
+      <button class="tab-btn" data-tab="stats">📊 Stats</button>
+      <button class="tab-btn" data-tab="announce">📢 Announce</button>
     </div>
     <div class="admin-body" id="admin-body">
       <div class="center"><div class="spin"></div></div>
@@ -475,77 +749,36 @@
   </div>
 </div>
 
-<!-- ═══════════════════════════════════════
-     MAIN APP
-══════════════════════════════════════════ -->
+<!-- MAIN APP -->
 <div id="main" style="display:none;">
 
-  <!-- Topbar -->
   <div id="topbar">
     <h1>🎮 Unblocked Games</h1>
-
+    <button id="user-name-chip" class="name-chip" onclick="openNameModal()">👤 …</button>
     <button id="show-favorites" class="top-btn">⭐ Favorites</button>
-    <button id="toggle-theme" class="top-btn" title="Toggle theme">🌓</button>
-    <button id="admin-btn" style="display:none;">🛡️ Admin</button>
-    <button id="logout-btn" class="top-btn">Logout</button>
-
+    <button id="toggle-theme"   class="top-btn">🌓</button>
+    <button id="admin-btn"      style="display:none;">🛡️ Admin</button>
+    <button id="logout-btn"     class="top-btn">Logout</button>
     <div class="search-wrap">
-      <input type="text" id="search" placeholder="Search games…" />
-      <img id="search-icon" src="./images/SearchIcon.png" alt="Search" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22white%22 stroke-width=%222%22><circle cx=%2211%22 cy=%2211%22 r=%228%22/><path d=%22m21 21-4.35-4.35%22/></svg>'" />
+      <input type="text" id="search" placeholder="Search games…"/>
+      <img id="search-icon" src="./images/SearchIcon.png" alt="Search"
+        onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22white%22 stroke-width=%222%22%3E%3Ccircle cx=%2211%22 cy=%2211%22 r=%228%22/%3E%3Cpath d=%22m21 21-4.35-4.35%22/%3E%3C/svg%3E'"/>
     </div>
   </div>
 
-  <!-- Game Grid -->
-  <div class="games">
+  <div id="category-bar"></div>
 
-    <a href="games/snowrider.html" class="card" data-game="snowrider">
-      Snow Rider <span class="heart">♡</span>
-    </a>
-
-    <a href="games/Gate-Solitare.html" class="card" data-game="gate-solitaire">
-      Gate Solitaire <span class="heart">♡</span>
-    </a>
-
-    <a href="games/Infinite-Craft.html" class="card" data-game="infinite-craft">
-      Infinite Craft <span class="heart">♡</span>
-    </a>
-
-    <a href="games/Hexagon-race.html" class="card" data-game="hexagon-race">
-      Hexagon Race <span class="heart">♡</span>
-    </a>
-
-    <a href="games/Geometry-Dash.html" class="card" data-game="geometry-dash">
-      Geometry Dash <span class="heart">♡</span>
-    </a>
-
-    <a href="games/Steal-a-Brainrot.html" class="card" data-game="steal-a-brainrot">
-      Steal a Brainrot <span class="heart">♡</span>
-    </a>
-
-    <a href="games/grow-a-garden.html" class="card" data-game="grow-a-garden">
-      Grow a Garden <span class="heart">♡</span>
-    </a>
-
-    <a href="games/Drift-Boss.html" class="card" data-game="drift-boss">
-      Drift Boss <span class="heart">♡</span>
-    </a>
-
-    <a href="games/Run-3.html" class="card" data-game="run-3">
-      Run 3 <span class="heart">♡</span>
-    </a>
-
-    <a href="games/Eaglecraft.html" class="card" data-game="eaglecraft">
-      Minecraft <span class="heart">♡</span>
-    </a>
-
+  <div id="recently-played" style="display:none;">
+    <h3 class="section-label">🕒 Recently Played</h3>
+    <div id="recent-row"></div>
   </div>
 
+  <h3 class="section-label">All Games</h3>
+  <div class="games" id="games-grid"></div>
   <p id="no-results">No games found 🤷</p>
 
 </div>
 
-<!-- Toast -->
 <div id="toast"></div>
-
 </body>
 </html>

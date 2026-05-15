@@ -1,12 +1,62 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>School Work</title>
-    <link rel="icon" type="image/png" href="../images/Icon.png">
+  <meta charset="UTF-8">
+  <title>School Work</title>
+  <link rel="icon" type="image/png" href="images/Icon.png">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; display: flex; flex-direction: column; height: 100vh; }
+
+    #fullscreen-btn {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      z-index: 999;
+      padding: 8px 14px;
+      background: rgba(0,0,0,0.6);
+      color: white;
+      border: 1px solid rgba(255,255,255,0.3);
+      border-radius: 8px;
+      font-family: 'Nunito', sans-serif;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      backdrop-filter: blur(6px);
+      transition: background 0.2s;
+    }
+    #fullscreen-btn:hover { background: rgba(255,255,255,0.2); }
+
+    iframe {
+      width: 100%;
+      flex: 1;
+      border: none;
+    }
+  </style>
 </head>
 <body>
-    
+
+  <button id="fullscreen-btn" onclick="toggleFullscreen()">⛶ Fullscreen</button>
+  <iframe id="game" src="https://chompypotato.github.io/run3/" allowfullscreen></iframe>
+
+  <script>
+    function toggleFullscreen() {
+      const btn = document.getElementById("fullscreen-btn");
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen();
+        btn.textContent = "✕ Exit Fullscreen";
+      } else {
+        document.exitFullscreen();
+        btn.textContent = "⛶ Fullscreen";
+      }
+    }
+
+    // Update button text if user presses Escape to exit fullscreen
+    document.addEventListener("fullscreenchange", () => {
+      const btn = document.getElementById("fullscreen-btn");
+      btn.textContent = document.fullscreenElement ? "✕ Exit Fullscreen" : "⛶ Fullscreen";
+    });
+  </script>
+
 </body>
 </html>

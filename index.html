@@ -1,8 +1,10 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Unblocked Games</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Unblocked games for school — favorites, ratings, and more.">
+  <title>Home - Classroom</title>
   <link rel="icon" type="image/png" href="images/Icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet">
@@ -30,6 +32,8 @@
 
     const OWNER_EMAILS = ["dragon.playz933@gmail.com", "ehanahmad@tahuna.school.nz"];
     const ADMIN_EMAILS = ["dragon.playz933@gmail.com", "ehanahmad@tahuna.school.nz", "shaneunahi-harding@tahuna.school.nz"];
+    const ownerSet = new Set(OWNER_EMAILS.map(e => e.toLowerCase()));
+    const adminSet = new Set(ADMIN_EMAILS.map(e => e.toLowerCase()));
 
     /* ── GAME DEFINITIONS ───────────────────────────────────────────────────── */
     const GAMES = [
@@ -430,15 +434,21 @@
     function showBanner(msg) {
       document.getElementById("announcement-text").textContent = msg;
       document.getElementById("announcement-bar").style.display = "flex";
+      document.body.classList.add("has-announcement");
     }
 
     /* ── MOBILE MENU ────────────────────────────────────────────────────────── */
     function toggleMobileMenu() {
-      const menu = document.getElementById("mobile-menu");
-      menu.classList.toggle("open");
+      const menu     = document.getElementById("mobile-menu");
+      const backdrop = document.getElementById("mobile-menu-backdrop");
+      const open     = menu.classList.toggle("open");
+      backdrop.classList.toggle("visible", open);
+      document.body.style.overflow = open ? "hidden" : "";
     }
     function closeMobileMenu() {
       document.getElementById("mobile-menu").classList.remove("open");
+      document.getElementById("mobile-menu-backdrop").classList.remove("visible");
+      document.body.style.overflow = "";
     }
 
     /* ── ADMIN PANEL ────────────────────────────────────────────────────────── */
@@ -493,7 +503,7 @@
           const email  = document.getElementById("ban-email-input").value.trim().toLowerCase();
           const result = document.getElementById("ban-email-result");
           if (!email) { result.style.color="var(--danger)"; result.textContent="Please enter an email."; return; }
-          if (OWNER_EMAILS.includes(email)) { result.style.color="var(--danger)"; result.textContent="❌ You cannot ban an owner."; return; }
+          if (ownerSet.has(email)) { result.style.color="var(--danger)"; result.textContent="❌ You cannot ban an owner."; return; }
           result.style.color="var(--subtext)"; result.textContent="Searching...";
           const snap = await getDocs(collection(db,"users"));
           let found = false;
@@ -561,7 +571,11 @@
           try {
             await setDoc(doc(db,"announcements","active"), { message:msg, active:!!msg });
             res.style.color="var(--success)"; res.textContent=msg?"✅ Published!":"✅ Banner hidden.";
-            msg ? showBanner(msg) : (document.getElementById("announcement-bar").style.display="none");
+            if (msg) showBanner(msg);
+            else {
+              document.getElementById("announcement-bar").style.display="none";
+              document.body.classList.remove("has-announcement");
+            }
           } catch(e) { res.style.color="var(--danger)"; res.textContent="Error: "+e.message; }
         });
         document.getElementById("announce-clear").addEventListener("click", () => {
@@ -649,8 +663,9 @@
     async function ensureUser(user) {
       const ref      = doc(db,"users",user.uid);
       const snap     = await getDoc(ref);
-      const isOwner  = OWNER_EMAILS.includes(user.email);
-      const isAdmin  = ADMIN_EMAILS.includes(user.email);
+      const email    = (user.email || "").toLowerCase();
+      const isOwner  = ownerSet.has(email);
+      const isAdmin  = adminSet.has(email) || isOwner;
       if (!snap.exists()) {
         await setDoc(ref, {
           email:user.email, favorites:[], theme:"dark", banned:false,
@@ -659,8 +674,8 @@
       } else {
         const d = snap.data();
         const updates = {};
-        if (isOwner && !d.isOwner) updates.isOwner = true;
-        if (isAdmin && !d.isAdmin) updates.isAdmin = true;
+        if (isOwner) { updates.isOwner = true; updates.isAdmin = true; }
+        else if (isAdmin && !d.isAdmin) updates.isAdmin = true;
         if (Object.keys(updates).length) await updateDoc(ref, updates);
       }
     }
@@ -767,6 +782,7 @@
       // Announcement dismiss
       document.getElementById("dismiss-announcement").addEventListener("click", () => {
         document.getElementById("announcement-bar").style.display="none";
+        document.body.classList.remove("has-announcement");
       });
 
       // Name modal backdrop
@@ -841,7 +857,10 @@
 <!-- LOGIN SCREEN -->
 <div id="login-screen">
   <div class="login-box">
-    <h1>🎮 Unblocked Games</h1>
+    <h1 class="login-brand">
+      <span class="brand-logo" aria-hidden="true">🎮</span>
+      <span class="brand-title">Unblocked Games</span>
+    </h1>
     <p>Sign in to save your favorites &amp; settings</p>
     <div id="auth-form" style="display:flex;flex-direction:column;gap:10px;">
       <input type="email"    id="email-input"    class="auth-input" placeholder="Email address"  autocomplete="email"/>
@@ -878,7 +897,7 @@
     <div id="name-error" class="auth-error"></div>
     <div style="display:flex;gap:10px;margin-top:4px;">
       <button class="auth-btn" onclick="saveName()">Save</button>
-      <button class="auth-btn" style="background:#333;flex:0.5" onclick="closeNameModal()">Skip</button>
+      <button class="auth-btn auth-btn-secondary" onclick="closeNameModal()">Skip</button>
     </div>
   </div>
 </div>
@@ -907,7 +926,10 @@
 <div id="main" style="display:none;">
 
   <div id="topbar">
-    <h1>🎮 <span class="topbar-title">Unblocked Games</span></h1>
+    <a href="/" class="topbar-brand" aria-label="Home">
+      <span class="brand-logo" aria-hidden="true">🎮</span>
+      <span class="brand-title">Unblocked Games</span>
+    </a>
     <div id="topbar-desktop">
       <button id="user-name-chip"  class="name-chip"  onclick="openNameModal()">👤 …</button>
       <button id="show-favorites"  class="top-btn">⭐ Favorites</button>
@@ -925,6 +947,8 @@
 
   <div id="category-bar"></div>
 
+  <div class="main-content">
+
   <div id="recently-played" style="display:none;">
     <h3 class="section-label">🕒 Recently Played</h3>
     <div id="recent-row"></div>
@@ -938,6 +962,8 @@
   <h3 class="section-label">All Games</h3>
   <div class="games" id="games-grid"></div>
   <p id="no-results">No games found 🤷</p>
+
+  </div>
 
 </div>
 

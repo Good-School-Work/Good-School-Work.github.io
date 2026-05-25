@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Home - Classroom</title>
+  <link rel="icon" type="image/png" href="../images/Icon.png">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; background: #000; overflow: hidden; }
+
+    #game-viewport {
+      position: fixed;
+      inset: 0;
+      background: #000;
+    }
+    #game {
+      width: 100%;
+      height: 100%;
+      border: none;
+      display: block;
+    }
+
+    #click-overlay,
+    #loading {
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: #0a0a12;
+      color: #fff;
+      font-family: 'Nunito', Arial, sans-serif;
+      text-align: center;
+      padding: 24px;
+      gap: 12px;
+    }
+    #click-overlay { cursor: pointer; z-index: 1001; }
+    #click-overlay h2 { font-size: 1.4rem; font-weight: 800; }
+    #click-overlay p, #loading p { font-size: 0.9rem; color: #888; max-width: 320px; }
+
+    #loading { display: none; z-index: 1000; }
+    #loading.active { display: flex; }
+
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid #333;
+      border-top-color: #4facfe;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #load-error {
+      display: none;
+      color: #ff6b6b;
+      font-size: 0.9rem;
+    }
+    #load-error a { color: #4facfe; }
+
+    #fullscreen-btn {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      z-index: 1002;
+      padding: 8px 14px;
+      background: rgba(0,0,0,0.6);
+      color: white;
+      border: 1px solid rgba(255,255,255,0.3);
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      backdrop-filter: blur(6px);
+      display: none;
+    }
+    #fullscreen-btn:hover { background: rgba(255,255,255,0.2); }
+  </style>
+</head>
+<body>
+  <div id="game-viewport">
+    <iframe id="game" allowfullscreen allow="fullscreen; autoplay; gamepad; microphone"></iframe>
+  </div>
+
+  <div id="click-overlay">
+    <h2>🎯 Click to Play 1v1.lol</h2>
+    <p>First load can take up to a minute — please wait</p>
+  </div>
+
+  <div id="loading">
+    <div class="spinner"></div>
+    <p>Loading game…</p>
+    <p id="load-error"></p>
+  </div>
+
+  <button id="fullscreen-btn" type="button">⛶ Fullscreen</button>
+
+  <script>
+    /* Full game hosted same-origin on papasgames — fixes 0% stuck cross-origin Unity load */
+    const GAME_URL = "https://papasgames.onl/play/1v1lol/";
+    const FALLBACK_URL = "https://2048taylorswift.github.io/1v1.lol/";
+
+    const overlay  = document.getElementById("click-overlay");
+    const loading  = document.getElementById("loading");
+    const errEl    = document.getElementById("load-error");
+    const frame    = document.getElementById("game");
+    const btn      = document.getElementById("fullscreen-btn");
+    const viewport = document.getElementById("game-viewport");
+
+    let started = false;
+    let loadTimer = null;
+    let triedFallback = false;
+
+    function showError(msg, link) {
+      errEl.style.display = "block";
+      errEl.innerHTML = msg + (link ? ` <a href="${link}" target="_blank" rel="noopener">Open game in new tab</a>` : "");
+    }
+
+    function onGameReady() {
+      clearTimeout(loadTimer);
+      loading.classList.remove("active");
+      btn.style.display = "block";
+    }
+
+    function loadGame(url) {
+      frame.onload = () => onGameReady();
+      frame.onerror = () => tryFallback();
+      frame.src = url;
+
+      loadTimer = setTimeout(() => {
+        if (!triedFallback) {
+          tryFallback();
+          return;
+        }
+        showError("Still loading? Network may be slow.", frame.src);
+      }, 90000);
+    }
+
+    function tryFallback() {
+      if (triedFallback) return;
+      triedFallback = true;
+      errEl.style.display = "none";
+      loadGame(FALLBACK_URL);
+    }
+
+    overlay.addEventListener("click", async () => {
+      if (started) return;
+      started = true;
+      overlay.remove();
+      loading.classList.add("active");
+      loadGame(GAME_URL);
+      try {
+        await viewport.requestFullscreen({ navigationUI: "hide" });
+      } catch (_) {
+        try { await document.documentElement.requestFullscreen(); } catch (_) {}
+      }
+    });
+
+    async function toggleFullscreen() {
+      if (!document.fullscreenElement) {
+        try {
+          await viewport.requestFullscreen({ navigationUI: "hide" });
+        } catch (_) {
+          try { await document.documentElement.requestFullscreen(); } catch (_) {}
+        }
+        btn.textContent = "✕ Exit";
+      } else {
+        document.exitFullscreen();
+        btn.textContent = "⛶ Fullscreen";
+      }
+    }
+    btn.addEventListener("click", toggleFullscreen);
+    document.addEventListener("fullscreenchange", () => {
+      btn.textContent = document.fullscreenElement ? "✕ Exit" : "⛶ Fullscreen";
+    });
+  </script>
+</body>
+</html>

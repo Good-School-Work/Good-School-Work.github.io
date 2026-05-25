@@ -1,41 +1,132 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>School Work</title>
-    <link rel="icon" type="image/png" href="../images/Icon.png">
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        html, body { width: 100%; height: 100%; background: #000; overflow: hidden; }
-        iframe { width: 100%; height: 100%; border: none; display: block; }
-        #fullscreen-btn {
-            position: fixed; top: 10px; right: 10px; z-index: 999;
-            padding: 8px 14px; background: rgba(0,0,0,0.6); color: white;
-            border: 1px solid rgba(255,255,255,0.3); border-radius: 8px;
-            font-size: 14px; font-weight: 700; cursor: pointer;
-            backdrop-filter: blur(6px); transition: background 0.2s;
-        }
-        #fullscreen-btn:hover { background: rgba(255,255,255,0.2); }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Home - Classroom</title>
+  <link rel="icon" type="image/png" href="../images/Icon.png">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; background: #000; overflow: hidden; }
+
+    /* Crop TurboWarp's bottom control bar (~50px) per embed docs */
+    #game-viewport {
+      position: fixed;
+      inset: 0;
+      overflow: hidden;
+      background: #000;
+    }
+    #game-viewport iframe {
+      position: absolute;
+      left: 50%;
+      top: 0;
+      transform: translateX(-50%);
+      width: 100vw;
+      height: calc(100vh + 52px);
+      min-width: calc(133.33vh);
+      border: none;
+      display: block;
+    }
+
+    #click-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.92);
+      color: #fff;
+      font-family: 'Nunito', Arial, sans-serif;
+      font-size: 1.35rem;
+      font-weight: 800;
+      cursor: pointer;
+      text-align: center;
+      padding: 24px;
+    }
+    #click-overlay span {
+      display: block;
+      margin-top: 8px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #aaa;
+    }
+
+    #fullscreen-btn {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      z-index: 1001;
+      padding: 8px 14px;
+      background: rgba(0,0,0,0.6);
+      color: white;
+      border: 1px solid rgba(255,255,255,0.3);
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      backdrop-filter: blur(6px);
+      transition: background 0.2s;
+      display: none;
+    }
+    #fullscreen-btn:hover { background: rgba(255,255,255,0.2); }
+  </style>
 </head>
 <body>
-    <button id="fullscreen-btn" onclick="toggleFullscreen()">⛶ Fullscreen</button>
-    <iframe src="https://candy-clicker.io" allowfullscreen></iframe>
-    <script>
-        function toggleFullscreen() {
-            const btn = document.getElementById("fullscreen-btn");
-            if (!document.fullscreenElement) {
-                document.documentElement.requestFullscreen();
-                btn.textContent = "✕ Exit Fullscreen";
-            } else {
-                document.exitFullscreen();
-                btn.textContent = "⛶ Fullscreen";
-            }
+  <div id="game-viewport">
+    <!-- Scratch project 332026728 via TurboWarp: autoplay + no Scratch site chrome -->
+    <iframe
+      id="game"
+      src="https://turbowarp.org/332026728/embed?autoplay&fullscreen-background=black"
+      allowtransparency="true"
+      scrolling="no"
+      allow="fullscreen; autoplay"
+      allowfullscreen
+      style="color-scheme: auto"
+    ></iframe>
+  </div>
+
+  <div id="click-overlay">
+    🍬 Click to Play Candy Clicker
+    <span>Fullscreen · autoplay on</span>
+  </div>
+  <button id="fullscreen-btn" type="button">⛶ Fullscreen</button>
+
+  <script>
+    const overlay = document.getElementById("click-overlay");
+    const btn     = document.getElementById("fullscreen-btn");
+    const viewport = document.getElementById("game-viewport");
+
+    async function startGame() {
+      overlay.remove();
+      btn.style.display = "block";
+      try {
+        await viewport.requestFullscreen({ navigationUI: "hide" });
+      } catch (_) {
+        try { await document.documentElement.requestFullscreen(); } catch (_) {}
+      }
+    }
+
+    overlay.addEventListener("click", startGame);
+
+    async function toggleFullscreen() {
+      if (!document.fullscreenElement) {
+        try {
+          await viewport.requestFullscreen({ navigationUI: "hide" });
+        } catch (_) {
+          try { await document.documentElement.requestFullscreen(); } catch (_) {}
         }
-        document.addEventListener("fullscreenchange", () => {
-            const btn = document.getElementById("fullscreen-btn");
-            btn.textContent = document.fullscreenElement ? "✕ Exit Fullscreen" : "⛶ Fullscreen";
-        });
-    </script>
+        btn.textContent = "✕ Exit";
+      } else {
+        document.exitFullscreen();
+        btn.textContent = "⛶ Fullscreen";
+      }
+    }
+    btn.addEventListener("click", toggleFullscreen);
+
+    document.addEventListener("fullscreenchange", () => {
+      btn.textContent = document.fullscreenElement ? "✕ Exit" : "⛶ Fullscreen";
+    });
+  </script>
 </body>
 </html>

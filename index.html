@@ -17,7 +17,8 @@
       createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
     import {
-      getFirestore, doc, getDoc, setDoc, updateDoc, collection, getDocs, increment, onSnapshot
+      getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc,
+      collection, getDocs, increment, onSnapshot, addDoc, query, orderBy
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
     /* ── CONFIG ─────────────────────────────────────────────────────────────── */
@@ -53,6 +54,7 @@
       { id:"1v1-lol",          name:"1v1.lol",          href:"games/1v1-lol.html",           category:"action",   emoji:"🎯", c1:"#4facfe", c2:"#00f2fe", newUntil:"2026-07-01", desc:"Build and battle in this fast-paced 1v1 shooter game!" },
       { id:"2048",             name:"2048",             href:"games/2048.html",              category:"puzzle",   emoji:"🔢", c1:"#f7971e", c2:"#ffd200", newUntil:"2026-07-01", desc:"Slide tiles to combine them and reach the 2048 tile!" },
       { id:"shell-shockers",   name:"Shell Shockers",   href:"games/Shell-Shockers.html",    category:"action",   emoji:"🥚", c1:"#a8ff78", c2:"#78ffd6", newUntil:"2026-07-01", desc:"Egg-based multiplayer shooter — crack enemies before they crack you!" },
+      { id:"rivals",           name:"Rivals",           href:"games/rivals.html",            category:"action",   emoji:"⚔️", c1:"#e74c3c", c2:"#c0392b", newUntil:"2026-09-01", desc:"Battle it out in this fast-paced Roblox-style rivals game!" },
     ];
     const CATEGORIES = ["all","racing","puzzle","action","creative","casual"];
 
@@ -209,10 +211,48 @@
       showToast("✅ Display name updated!");
     };
 
+    /* ── SUGGESTIONS ────────────────────────────────────────────────────────── */
+    window.openSuggestionModal = () => {
+      document.getElementById("suggestion-input").value = "";
+      document.getElementById("suggestion-error").textContent = "";
+      document.getElementById("suggestion-success").textContent = "";
+      document.getElementById("suggestion-modal").style.display = "flex";
+    };
+    window.closeSuggestionModal = () => {
+      document.getElementById("suggestion-modal").style.display = "none";
+    };
+    window.submitSuggestion = async () => {
+      const input = document.getElementById("suggestion-input");
+      const err   = document.getElementById("suggestion-error");
+      const succ  = document.getElementById("suggestion-success");
+      const btn   = document.getElementById("suggestion-submit-btn");
+      const name  = input.value.trim();
+      err.textContent = ""; succ.textContent = "";
+      if (!name)           { err.textContent = "Please enter a game name."; return; }
+      if (name.length > 100) { err.textContent = "Keep it under 100 characters!"; return; }
+      btn.disabled = true; btn.textContent = "Sending…";
+      try {
+        const user = auth.currentUser;
+        await addDoc(collection(db, "suggestions"), {
+          game: name,
+          submittedBy: user?.email || "anonymous",
+          displayName: userData.displayName || "",
+          uid: user?.uid || null,
+          timestamp: new Date().toISOString()
+        });
+        input.value = "";
+        succ.textContent = "✅ Suggestion sent! Thanks!";
+        setTimeout(() => { closeSuggestionModal(); }, 1800);
+      } catch(e) {
+        err.textContent = "Failed to send. Try again.";
+      } finally {
+        btn.disabled = false; btn.textContent = "Submit";
+      }
+    };
+
     /* ── SHARE GAME ─────────────────────────────────────────────────────────── */
     window.shareGame = (gameId, e) => {
-      e.preventDefault();
-      e.stopPropagation();
+      e.preventDefault(); e.stopPropagation();
       const g = GAMES.find(x => x.id === gameId);
       if (!g) return;
       const url = window.location.origin + "/" + g.href;
@@ -220,11 +260,8 @@
         navigator.clipboard.writeText(url).then(() => showToast("🔗 Link copied!"));
       } else {
         const ta = document.createElement("textarea");
-        ta.value = url;
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand("copy");
-        document.body.removeChild(ta);
+        ta.value = url; document.body.appendChild(ta); ta.select();
+        document.execCommand("copy"); document.body.removeChild(ta);
         showToast("🔗 Link copied!");
       }
     };
@@ -308,11 +345,14 @@
       }
     }
 
+    /* ── FIXED: re-fetches real count after increment so leaderboard is accurate */
     window.incrementPlayCount = async (gameId) => {
       try {
-        await setDoc(doc(db,"games",gameId), { playCount: increment(1) }, { merge:true });
+        const ref = doc(db, "games", gameId);
+        await setDoc(ref, { playCount: increment(1) }, { merge: true });
+        const snap = await getDoc(ref);
         if (!gameStats[gameId]) gameStats[gameId] = {};
-        gameStats[gameId].playCount = (gameStats[gameId].playCount||0) + 1;
+        gameStats[gameId] = { ...gameStats[gameId], ...(snap.data() || {}) };
         updateGameStatUI(gameId);
         renderLeaderboard();
       } catch(e) { console.warn(e); }
@@ -473,11 +513,9 @@
           const allUsers = [];
           snap.forEach(d => allUsers.push({ id:d.id, ...d.data() }));
           allUsers.sort((a,b) => (b.isOwner-a.isOwner)||(b.isAdmin-a.isAdmin)||(a.email>b.email?1:-1));
-
           body.innerHTML = `
             <input class="admin-input" id="user-search" placeholder="🔍 Search by name or email…" style="margin-bottom:14px;width:100%"/>
             <div class="user-list" id="user-list-inner">${allUsers.map(u=>userRow(u,viewerIsOwner,viewerIsAdmin)).join("")}</div>`;
-
           document.getElementById("user-search").addEventListener("input", e => {
             const q = e.target.value.toLowerCase();
             const filtered = allUsers.filter(u =>
@@ -497,7 +535,7 @@
               <input class="admin-input" id="ban-email-input" type="email" placeholder="user@example.com"/>
               <button class="admin-submit" id="ban-email-btn">Ban</button>
             </div>
-            <div class="admin-note">⚠️ Searches Firestore for the email and sets them as banned. They'll see a BANNED screen on next login.</div>
+            <div class="admin-note">⚠️ Searches Firestore for the email and sets them as banned. They'll be live-kicked immediately.</div>
             <div id="ban-email-result" style="margin-top:10px;font-size:13px;font-weight:700;"></div>
           </div>`;
         document.getElementById("ban-email-btn").addEventListener("click", async () => {
@@ -516,6 +554,19 @@
           }
           if (!found) { result.style.color="var(--danger)"; result.textContent=`❌ No account found for: ${email}`; }
         });
+
+      } else if (tab === "suggestions") {
+        body.innerHTML = `<div class="center"><div class="spin"></div></div>`;
+        try {
+          const snap = await getDocs(query(collection(db,"suggestions"), orderBy("timestamp","desc")));
+          if (snap.empty) {
+            body.innerHTML = `<p style="color:var(--subtext);text-align:center;margin-top:20px;">No suggestions yet 🎉</p>`;
+            return;
+          }
+          const rows = [];
+          snap.forEach(d => rows.push({ id:d.id, ...d.data() }));
+          body.innerHTML = `<div class="user-list" id="suggestion-list">${rows.map(s => suggestionRow(s)).join("")}</div>`;
+        } catch(e) { body.innerHTML=`<p style="color:var(--danger);">Error: ${e.message}</p>`; }
 
       } else if (tab === "stats") {
         body.innerHTML = `<div class="center"><div class="spin"></div></div>`;
@@ -573,10 +624,7 @@
             await setDoc(doc(db,"announcements","active"), { message:msg, active:!!msg });
             res.style.color="var(--success)"; res.textContent=msg?"✅ Published!":"✅ Banner hidden.";
             if (msg) showBanner(msg);
-            else {
-              document.getElementById("announcement-bar").style.display="none";
-              document.body.classList.remove("has-announcement");
-            }
+            else { document.getElementById("announcement-bar").style.display="none"; document.body.classList.remove("has-announcement"); }
           } catch(e) { res.style.color="var(--danger)"; res.textContent="Error: "+e.message; }
         });
         document.getElementById("announce-clear").addEventListener("click", () => {
@@ -587,27 +635,37 @@
         body.innerHTML = `
           <div class="roles-info">
             <h3 style="margin-bottom:14px;font-size:1em;font-weight:800">Role Hierarchy</h3>
-            <div class="role-card">
-              <span class="badge owner">👑 OWNER</span>
-              <div class="role-desc">
-                <strong>Full control.</strong> Can promote/demote admins, kick/ban anyone (except other owners), publish announcements. Cannot be banned or kicked by anyone.
-              </div>
-            </div>
-            <div class="role-card">
-              <span class="badge admin">ADMIN</span>
-              <div class="role-desc">
-                <strong>Moderation.</strong> Can ban/unban and kick regular users. Cannot touch admins or owners. Cannot promote/demote.
-              </div>
-            </div>
-            <div class="role-card">
-              <span class="badge active">USER</span>
-              <div class="role-desc">
-                <strong>Standard access.</strong> Can play games, rate, favorite, and set a display name.
-              </div>
-            </div>
+            <div class="role-card"><span class="badge owner">👑 OWNER</span><div class="role-desc"><strong>Full control.</strong> Can promote/demote admins, kick/ban/warn anyone (except other owners), publish announcements. Cannot be touched by anyone.</div></div>
+            <div class="role-card"><span class="badge admin">ADMIN</span><div class="role-desc"><strong>Moderation.</strong> Can ban/unban, kick, and warn regular users. Cannot touch admins or owners.</div></div>
+            <div class="role-card"><span class="badge active">USER</span><div class="role-desc"><strong>Standard access.</strong> Can play games, rate, favorite, and set a display name.</div></div>
           </div>`;
       }
     }
+
+    function suggestionRow(s) {
+      const time = s.timestamp ? new Date(s.timestamp).toLocaleString() : "Unknown time";
+      const who  = s.displayName ? `${s.displayName} (${s.submittedBy})` : s.submittedBy;
+      return `
+        <div class="suggestion-row" id="sug-${s.id}">
+          <div style="flex:1;min-width:0">
+            <div class="suggestion-game">💡 ${s.game}</div>
+            <div class="suggestion-meta">by ${who} · ${time}</div>
+          </div>
+          <button class="suggestion-del" onclick="deleteSuggestion('${s.id}')">✕ Dismiss</button>
+        </div>`;
+    }
+
+    window.deleteSuggestion = async (id) => {
+      try {
+        await deleteDoc(doc(db, "suggestions", id));
+        const el = document.getElementById(`sug-${id}`);
+        if (el) el.remove();
+        const list = document.getElementById("suggestion-list");
+        if (list && !list.children.length) {
+          list.innerHTML = `<p style="color:var(--subtext);text-align:center;padding:20px 0">No more suggestions!</p>`;
+        }
+      } catch(e) { showToast("Couldn't delete suggestion."); }
+    };
 
     function userRow(u, viewerIsOwner, viewerIsAdmin) {
       const initials = (u.email||"?")[0].toUpperCase();
@@ -615,6 +673,7 @@
       const badges   = [];
       if (u.isOwner) badges.push(`<span class="badge owner">👑 OWNER</span>`);
       else if (u.isAdmin) badges.push(`<span class="badge admin">ADMIN</span>`);
+      if (u.warned) badges.push(`<span class="badge warned">⚠️ WARNED</span>`);
       badges.push(u.banned ? `<span class="badge banned">BANNED</span>` : `<span class="badge active">ACTIVE</span>`);
 
       let actions = "";
@@ -623,22 +682,22 @@
       } else if (u.isOwner) {
         actions = `<span style="font-size:12px;color:#ffd700;font-weight:800">👑 Owner</span>`;
       } else if (viewerIsOwner) {
-        // Owners can do everything to non-owners
-        const banBtn    = u.banned
+        const banBtn  = u.banned
           ? `<button class="action-btn unban"   onclick="window.adminUnban('${u.id}',this)">Unban</button>`
           : `<button class="action-btn ban"     onclick="window.adminBan('${u.id}',this)">Ban</button>`;
-        const promBtn   = u.isAdmin
+        const promBtn = u.isAdmin
           ? `<button class="action-btn demote"  onclick="window.adminDemote('${u.id}',this)">Demote</button>`
           : `<button class="action-btn promote" onclick="window.adminPromote('${u.id}',this)">Promote</button>`;
-        const kickBtn   = `<button class="action-btn kick" onclick="window.adminKick('${u.id}',this)">Kick</button>`;
-        actions = `${promBtn}${banBtn}${kickBtn}`;
+        const kickBtn = `<button class="action-btn kick" onclick="window.adminKick('${u.id}',this)">Kick</button>`;
+        const warnBtn = `<button class="action-btn warn" onclick="window.openWarnModal('${u.id}','${(u.email||"").replace(/'/g,"\\'")}')">Warn</button>`;
+        actions = `${promBtn}${warnBtn}${banBtn}${kickBtn}`;
       } else if (viewerIsAdmin && !u.isAdmin) {
-        // Admins can only touch regular users
         const banBtn  = u.banned
           ? `<button class="action-btn unban" onclick="window.adminUnban('${u.id}',this)">Unban</button>`
           : `<button class="action-btn ban"   onclick="window.adminBan('${u.id}',this)">Ban</button>`;
         const kickBtn = `<button class="action-btn kick" onclick="window.adminKick('${u.id}',this)">Kick</button>`;
-        actions = `${banBtn}${kickBtn}`;
+        const warnBtn = `<button class="action-btn warn" onclick="window.openWarnModal('${u.id}','${(u.email||"").replace(/'/g,"\\'")}')">Warn</button>`;
+        actions = `${warnBtn}${banBtn}${kickBtn}`;
       } else if (viewerIsAdmin && u.isAdmin) {
         actions = `<span style="font-size:12px;color:var(--subtext)">Admin</span>`;
       }
@@ -654,6 +713,36 @@
         </div>`;
     }
 
+    /* ── WARN MODAL ─────────────────────────────────────────────────────────── */
+    window.openWarnModal = (uid, email) => {
+      document.getElementById("warn-uid").value   = uid;
+      document.getElementById("warn-email").value = email;
+      document.getElementById("warn-message-input").value = "";
+      document.getElementById("warn-error").textContent = "";
+      document.getElementById("warn-modal").style.display = "flex";
+    };
+    window.closeWarnModal = () => { document.getElementById("warn-modal").style.display = "none"; };
+    window.sendWarn = async () => {
+      const uid     = document.getElementById("warn-uid").value;
+      const email   = document.getElementById("warn-email").value;
+      const message = document.getElementById("warn-message-input").value.trim();
+      const err     = document.getElementById("warn-error");
+      const btn     = document.getElementById("warn-submit-btn");
+      err.textContent = "";
+      if (!message) { err.textContent = "Please enter a warning message."; return; }
+      btn.disabled = true; btn.textContent = "Sending…";
+      try {
+        await updateDoc(doc(db,"users",uid), { warned: true, warnMessage: message });
+        closeWarnModal();
+        showToast(`⚠️ Warning sent to ${email}`);
+        loadAdminTab("users");
+      } catch(e) {
+        err.textContent = "Failed to send warning.";
+      } finally {
+        btn.disabled = false; btn.textContent = "Send Warning";
+      }
+    };
+
     window.adminBan     = async (uid,btn) => { btn.disabled=true; btn.textContent="…"; await updateDoc(doc(db,"users",uid),{banned:true});   showToast("🚫 Banned");            loadAdminTab("users"); };
     window.adminUnban   = async (uid,btn) => { btn.disabled=true; btn.textContent="…"; await updateDoc(doc(db,"users",uid),{banned:false});  showToast("✅ Unbanned");           loadAdminTab("users"); };
     window.adminKick    = async (uid,btn) => { btn.disabled=true; btn.textContent="…"; await updateDoc(doc(db,"users",uid),{kicked:true});   showToast("👢 User kicked");        loadAdminTab("users"); };
@@ -662,15 +751,16 @@
 
     /* ── ENSURE USER ────────────────────────────────────────────────────────── */
     async function ensureUser(user) {
-      const ref      = doc(db,"users",user.uid);
-      const snap     = await getDoc(ref);
-      const email    = (user.email || "").toLowerCase();
-      const isOwner  = ownerSet.has(email);
-      const isAdmin  = adminSet.has(email) || isOwner;
+      const ref     = doc(db,"users",user.uid);
+      const snap    = await getDoc(ref);
+      const email   = (user.email || "").toLowerCase();
+      const isOwner = ownerSet.has(email);
+      const isAdmin = adminSet.has(email) || isOwner;
       if (!snap.exists()) {
         await setDoc(ref, {
           email:user.email, favorites:[], theme:"dark", banned:false,
-          isAdmin, isOwner, recentlyPlayed:[], ratings:{}, displayName:"", kicked:false
+          isAdmin, isOwner, recentlyPlayed:[], ratings:{}, displayName:"", kicked:false,
+          warned:false, warnMessage:""
         });
       } else {
         const d = snap.data();
@@ -680,6 +770,31 @@
         if (Object.keys(updates).length) await updateDoc(ref, updates);
       }
     }
+
+    /* ── WARN SCREEN ────────────────────────────────────────────────────────── */
+    function showWarnScreen(message) {
+      // Remove any existing warn overlay
+      document.getElementById("warn-overlay")?.remove();
+      const overlay = document.createElement("div");
+      overlay.id = "warn-overlay";
+      overlay.className = "warn-notice";
+      overlay.innerHTML = `
+        <div class="warn-box">
+          <h2>⚠️ Warning</h2>
+          <p>You have received a warning from an admin.</p>
+          <div class="warn-msg">${message || "Please follow the rules."}</div>
+          <p style="font-size:12px;color:#666;">Further violations may result in a ban.</p>
+          <button class="warn-dismiss" onclick="dismissWarnScreen()">I understand</button>
+        </div>`;
+      document.body.appendChild(overlay);
+    }
+    window.dismissWarnScreen = async () => {
+      document.getElementById("warn-overlay")?.remove();
+      const user = auth.currentUser;
+      if (user) {
+        await updateDoc(doc(db,"users",user.uid), { warned:false, warnMessage:"" }).catch(()=>{});
+      }
+    };
 
     /* ── AUTH STATE ─────────────────────────────────────────────────────────── */
     onAuthStateChanged(auth, async user => {
@@ -722,20 +837,36 @@
       loadGameStats();
       loadAnnouncement();
 
+      // Show warn screen if they have a pending warning
+      if (data.warned && data.warnMessage) {
+        showWarnScreen(data.warnMessage);
+      }
+
       if (!data.displayName) setTimeout(() => openNameModal(), 800);
 
-      document.getElementById("admin-btn").style.display      = data.isAdmin ? "inline-block" : "none";
-      document.getElementById("mm-admin-btn").style.display   = data.isAdmin ? "block" : "none";
+      document.getElementById("admin-btn").style.display    = data.isAdmin ? "inline-block" : "none";
+      document.getElementById("mm-admin-btn").style.display = data.isAdmin ? "block" : "none";
 
-      // Real-time listener — detects kicks and bans while user is online
+      /* ── LIVE LISTENER: kick, ban, warn in real time ── */
       userUnsubscribe = onSnapshot(doc(db,"users",user.uid), snap => {
         const d = snap.data();
         if (!d || !auth.currentUser) return;
+
+        // Live kick
         if (d.kicked) {
           updateDoc(doc(db,"users",user.uid), { kicked:false }).then(() => signOut(auth));
           showToast("👢 You have been kicked by an admin.");
         }
-        if (d.banned) signOut(auth);
+
+        // Live ban
+        if (d.banned) {
+          signOut(auth);
+        }
+
+        // Live warn — show the screen if a new warning arrives
+        if (d.warned && d.warnMessage && !document.getElementById("warn-overlay")) {
+          showWarnScreen(d.warnMessage);
+        }
       });
     });
 
@@ -757,17 +888,19 @@
       input.addEventListener("input", () => { searchQuery=input.value.toLowerCase(); applyFilters(); });
 
       // Topbar buttons
-      document.getElementById("toggle-theme").addEventListener("click",   toggleTheme);
-      document.getElementById("logout-btn").addEventListener("click",     () => signOut(auth));
-      document.getElementById("show-favorites").addEventListener("click", toggleFavFilter);
-      document.getElementById("admin-btn").addEventListener("click",      openAdmin);
-      document.getElementById("hamburger-btn").addEventListener("click",  toggleMobileMenu);
+      document.getElementById("toggle-theme").addEventListener("click",    toggleTheme);
+      document.getElementById("logout-btn").addEventListener("click",      () => signOut(auth));
+      document.getElementById("show-favorites").addEventListener("click",  toggleFavFilter);
+      document.getElementById("admin-btn").addEventListener("click",       openAdmin);
+      document.getElementById("hamburger-btn").addEventListener("click",   toggleMobileMenu);
+      document.getElementById("suggest-btn").addEventListener("click",     openSuggestionModal);
 
       // Mobile menu buttons
       document.getElementById("mm-favorites-btn").addEventListener("click",  () => { toggleFavFilter(); closeMobileMenu(); });
       document.getElementById("mm-theme-btn").addEventListener("click",      () => { toggleTheme(); closeMobileMenu(); });
       document.getElementById("mm-admin-btn").addEventListener("click",      () => { openAdmin(); closeMobileMenu(); });
       document.getElementById("mm-name-btn").addEventListener("click",       () => { openNameModal(); closeMobileMenu(); });
+      document.getElementById("mm-suggest-btn").addEventListener("click",    () => { openSuggestionModal(); closeMobileMenu(); });
       document.getElementById("mm-logout-btn").addEventListener("click",     () => { signOut(auth); closeMobileMenu(); });
       document.getElementById("mobile-menu-backdrop").addEventListener("click", closeMobileMenu);
 
@@ -786,9 +919,15 @@
         document.body.classList.remove("has-announcement");
       });
 
-      // Name modal backdrop
+      // Modal backdrops
       document.getElementById("name-modal").addEventListener("click", e => {
         if (e.target===document.getElementById("name-modal")) closeNameModal();
+      });
+      document.getElementById("suggestion-modal").addEventListener("click", e => {
+        if (e.target===document.getElementById("suggestion-modal")) closeSuggestionModal();
+      });
+      document.getElementById("warn-modal").addEventListener("click", e => {
+        if (e.target===document.getElementById("warn-modal")) closeWarnModal();
       });
 
       // Card interactions (delegation)
@@ -806,7 +945,7 @@
           await rateGame(user, e.target.closest(".card").dataset.game, parseInt(e.target.dataset.star));
           return;
         }
-        if (e.target.classList.contains("share-btn")) return; // handled by onclick
+        if (e.target.classList.contains("share-btn")) return;
         const card = e.target.closest(".card");
         if (card && user) { window.incrementPlayCount(card.dataset.game); addRecentlyPlayed(user, card.dataset.game); }
       });
@@ -850,6 +989,7 @@
   <button id="mm-favorites-btn" class="mm-btn">⭐ Favorites</button>
   <button id="mm-theme-btn"     class="mm-btn">🌓 Toggle Theme</button>
   <button id="mm-name-btn"      class="mm-btn">👤 Display Name</button>
+  <button id="mm-suggest-btn"   class="mm-btn">💡 Suggest a Game</button>
   <button id="mm-admin-btn"     class="mm-btn" style="display:none;">🛡️ Admin Panel</button>
   <div class="mm-divider"></div>
   <button id="mm-logout-btn"    class="mm-btn mm-danger">Logout</button>
@@ -903,6 +1043,37 @@
   </div>
 </div>
 
+<!-- SUGGESTION MODAL -->
+<div id="suggestion-modal" style="display:none;">
+  <div class="name-modal-box">
+    <h3>💡 Suggest a Game</h3>
+    <p>Got a game you want added? Let us know!</p>
+    <input type="text" id="suggestion-input" class="auth-input" placeholder="Game name (e.g. Bloxd.io)" maxlength="100"/>
+    <div id="suggestion-error" class="auth-error"></div>
+    <div id="suggestion-success" class="auth-success"></div>
+    <div style="display:flex;gap:10px;margin-top:4px;">
+      <button class="auth-btn" id="suggestion-submit-btn" onclick="submitSuggestion()">Submit</button>
+      <button class="auth-btn auth-btn-secondary" onclick="closeSuggestionModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- WARN MODAL (admin sends warning) -->
+<div id="warn-modal" style="display:none;">
+  <div class="name-modal-box">
+    <h3>⚠️ Send Warning</h3>
+    <p>This will immediately show a warning screen to the user.</p>
+    <input type="hidden" id="warn-uid"/>
+    <input type="hidden" id="warn-email"/>
+    <textarea id="warn-message-input" class="auth-input admin-textarea" placeholder="Warning message… (e.g. Stop spamming the chat)" maxlength="300" style="min-height:80px;resize:vertical;"></textarea>
+    <div id="warn-error" class="auth-error"></div>
+    <div style="display:flex;gap:10px;margin-top:4px;">
+      <button class="auth-btn" id="warn-submit-btn" onclick="sendWarn()" style="background:#ffaa00;color:#111;">Send Warning</button>
+      <button class="auth-btn auth-btn-secondary" onclick="closeWarnModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <!-- ADMIN OVERLAY -->
 <div id="admin-overlay">
   <div id="admin-panel">
@@ -913,6 +1084,7 @@
     <div class="admin-tabs">
       <button class="tab-btn active" data-tab="users">👥 Users</button>
       <button class="tab-btn" data-tab="ban-email">✉️ Ban by Email</button>
+      <button class="tab-btn" data-tab="suggestions">💡 Suggestions</button>
       <button class="tab-btn" data-tab="stats">📊 Stats</button>
       <button class="tab-btn" data-tab="announce">📢 Announce</button>
       <button class="tab-btn" data-tab="roles">🏅 Roles</button>
@@ -934,6 +1106,7 @@
     <div id="topbar-desktop">
       <button id="user-name-chip"  class="name-chip"  onclick="openNameModal()">👤 …</button>
       <button id="show-favorites"  class="top-btn">⭐ Favorites</button>
+      <button id="suggest-btn"     class="top-btn">💡 Suggest</button>
       <button id="toggle-theme"    class="top-btn">🌓</button>
       <button id="admin-btn"       style="display:none;">🛡️ Admin</button>
       <button id="logout-btn"      class="top-btn">Logout</button>
@@ -949,21 +1122,17 @@
   <div id="category-bar"></div>
 
   <div class="main-content">
-
-  <div id="recently-played" style="display:none;">
-    <h3 class="section-label">🕒 Recently Played</h3>
-    <div id="recent-row"></div>
-  </div>
-
-  <div id="leaderboard-section" style="display:none;">
-    <h3 class="section-label">🏆 Leaderboard</h3>
-    <div id="leaderboard-list"></div>
-  </div>
-
-  <h3 class="section-label">All Games</h3>
-  <div class="games" id="games-grid"></div>
-  <p id="no-results">No games found 🤷</p>
-
+    <div id="recently-played" style="display:none;">
+      <h3 class="section-label">🕒 Recently Played</h3>
+      <div id="recent-row"></div>
+    </div>
+    <div id="leaderboard-section" style="display:none;">
+      <h3 class="section-label">🏆 Leaderboard</h3>
+      <div id="leaderboard-list"></div>
+    </div>
+    <h3 class="section-label">All Games</h3>
+    <div class="games" id="games-grid"></div>
+    <p id="no-results">No games found 🤷</p>
   </div>
 
 </div>

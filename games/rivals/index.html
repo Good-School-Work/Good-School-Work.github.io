@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Home - Classroom</title>
+  <link rel="icon" type="image/png" href="../../images/Icon.png">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; background: #0a0a0a; overflow: hidden; }
+    #unity-container { width: 100%; height: 100%; position: relative; }
+    #unity-canvas {
+      width: 100%; height: 100%; display: block; background: #0a0a0a;
+    }
+    #unity-loading-container {
+      position: fixed; inset: 0; z-index: 10;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      background: #0a0a0a; color: #fff; font-family: 'Nunito', Arial, sans-serif; gap: 16px;
+    }
+    #unity-loading-container.hidden { display: none; }
+    #loading-title { font-size: 1.5rem; font-weight: 800; }
+    #loading-percentage { font-size: 0.95rem; color: #888; }
+    #unity-loading-bar {
+      width: min(320px, 80vw); height: 8px; background: #222; border-radius: 8px; overflow: hidden;
+    }
+    #unity-loading-bar-inner {
+      height: 100%; width: 1%; background: linear-gradient(90deg, #e74c3c, #c0392b);
+      border-radius: 8px; transition: width 0.15s ease;
+    }
+    #load-error { display: none; color: #ff6b6b; font-size: 0.9rem; text-align: center; max-width: 320px; padding: 0 16px; }
+    #click-overlay {
+      position: fixed; inset: 0; z-index: 20;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(0,0,0,0.92); color: #fff;
+      font-family: 'Nunito', Arial, sans-serif; font-size: 1.35rem; font-weight: 800;
+      cursor: pointer; text-align: center; padding: 24px;
+    }
+    #click-overlay span { display: block; margin-top: 8px; font-size: 0.85rem; font-weight: 600; color: #888; }
+  </style>
+</head>
+<body>
+  <div id="click-overlay">
+    ⚔️ Click to Play Rivals
+    <span>First load may take a minute</span>
+  </div>
+
+  <div id="unity-container">
+    <canvas id="unity-canvas"></canvas>
+    <div id="unity-loading-container">
+      <div id="loading-title">Loading Rivals…</div>
+      <div id="loading-percentage">0%</div>
+      <div id="unity-loading-bar"><div id="unity-loading-bar-inner"></div></div>
+      <div id="load-error"></div>
+    </div>
+  </div>
+
+  <script>
+    const buildUrl = "Build";
+    const loaderUrl = buildUrl + "/357694047e9baddc7a3db1846ce026b2.loader.js";
+    const config = {
+      dataUrl: buildUrl + "/f3a7b5ae54fc606d298760be19b46a72.data.br",
+      frameworkUrl: buildUrl + "/6a0ef603c19b75214842246a96ef0d3d.framework.js.br",
+      codeUrl: buildUrl + "/1f8e4f7c96ae99b745bd1f4e277b2398.wasm.br",
+      streamingAssetsUrl: "StreamingAssets",
+      companyName: "LEGiON Platforms",
+      productName: "Veck.io",
+      productVersion: "0.0.2464",
+      devicePixelRatio: 1
+    };
+
+    const overlay = document.getElementById("click-overlay");
+    const loadingContainer = document.getElementById("unity-loading-container");
+    const loadingBar = document.getElementById("unity-loading-bar-inner");
+    const loadingPct = document.getElementById("loading-percentage");
+    const errEl = document.getElementById("load-error");
+    let started = false;
+
+    function showError(msg) {
+      errEl.style.display = "block";
+      errEl.textContent = msg;
+    }
+
+    function startGame() {
+      if (started) return;
+      started = true;
+      overlay.remove();
+
+      const canvas = document.getElementById("unity-canvas");
+      let targetProgress = 5;
+      const tick = setInterval(() => {
+        if (targetProgress < 95) {
+          targetProgress += 0.5;
+          loadingBar.style.width = targetProgress + "%";
+          loadingPct.textContent = Math.round(targetProgress) + "%";
+        }
+      }, 120);
+
+      function finishLoad() {
+        clearInterval(tick);
+        loadingBar.style.width = "100%";
+        loadingPct.textContent = "100%";
+        setTimeout(() => loadingContainer.classList.add("hidden"), 400);
+      }
+
+      function runUnity() {
+        createUnityInstance(canvas, config, (p) => {
+          const pct = Math.min(99, Math.max(5, Math.round(p * 100)));
+          targetProgress = pct;
+          loadingBar.style.width = pct + "%";
+          loadingPct.textContent = pct + "%";
+        }).then((unityInstance) => {
+          window.unityInstance = unityInstance;
+          finishLoad();
+        }).catch((e) => {
+          clearInterval(tick);
+          console.error(e);
+          showError("Failed to load. Multiplayer may need network access.");
+        });
+      }
+
+      if (typeof createUnityInstance === "function") {
+        runUnity();
+      } else {
+        const s = document.createElement("script");
+        s.src = loaderUrl;
+        s.onload = runUnity;
+        s.onerror = () => {
+          clearInterval(tick);
+          showError("Could not load game files.");
+        };
+        document.body.appendChild(s);
+      }
+    }
+
+    overlay.addEventListener("click", () => {
+      startGame();
+      document.documentElement.requestFullscreen?.().catch(() => {});
+    });
+  </script>
+</body>
+</html>

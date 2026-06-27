@@ -124,7 +124,7 @@ body.has-announcement {
   color: white;
   box-shadow: 0 0 60px rgba(108,99,255,0.2), 0 20px 60px rgba(0,0,0,0.5);
   animation: fadeUp 0.5s ease;
-  max-width: 380px;
+  max-width: 410px;
   width: 90%;
 }
 
@@ -230,14 +230,15 @@ body.has-announcement {
   transform: translateY(-1px);
 }
 
-.auth-bottom-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.auth-toggle { font-size: 12px; color: #888; text-align: left; }
+.auth-bottom-row {  
+  display: flex;  
+  flex-direction: column;  
+  align-items: center;  
+  gap: 6px;  
+  margin-top: 6px;  
+  font-size: 12px;  
+}  
+.auth-toggle { text-align: center; margin: 0; }
 .auth-toggle a { color: var(--accent); text-decoration: none; font-weight: 700; }
 .auth-toggle a:hover { text-decoration: underline; }
 
@@ -1089,3 +1090,32 @@ body.has-announcement .mobile-menu {
   .lb-row     { padding: 10px 12px; gap: 10px; }
   .lb-thumb   { width: 40px; height: 40px; font-size: 18px; }
 }
+
+.login-legal {  
+  margin-top: 16px;  
+  font-size: 12px;  
+  color: var(--subtext);  
+  text-align: center;  
+  line-height: 1.5;  
+}  
+.login-legal a { color: var(--accent); text-decoration: none; }  
+.login-legal a:hover { text-decoration: underline; }  
+  
+.legal-page {  
+  max-width: 760px;  
+  margin: 40px auto;  
+  padding: 32px;  
+  background: var(--card-bg);  
+  border: 1px solid var(--card-border);  
+  border-radius: var(--radius-md);  
+  color: var(--text-color);  
+  line-height: 1.6;  
+}  
+.legal-page h1 { margin-top: 0; }  
+.legal-page a.back-link {  
+  display: inline-block;  
+  margin-bottom: 20px;  
+  color: var(--accent);  
+  text-decoration: none;  
+}  
+.legal-page a.back-link:hover { text-decoration: underline; }

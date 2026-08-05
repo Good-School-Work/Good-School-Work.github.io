@@ -1730,19 +1730,20 @@ body.has-announcement .mobile-menu {
   text-decoration: underline;
 }
 
-/* =========================================
-   AD UNIT
-========================================= */
-#ad-frame-2450673 {
-  width: 70%;
-  max-width: 500px;
-  margin: 32px auto 0;
-  position: relative;
-  z-index: 99999;
-}
-
-@media (max-width: 768px) {
-  #ad-frame-2450673 {
-    width: 90%;
-  }
+/* =========================================  
+   AD UNIT  
+========================================= */  
+#ad-frame-2450673 {  
+  width: 70%;  
+  max-width: 500px;  
+  height: 250px;  
+  margin: 32px auto 0;  
+  position: relative;  
+  z-index: 99999;  
+}  
+  
+@media (max-width: 768px) {  
+  #ad-frame-2450673 {  
+    width: 90%;  
+  }  
 }

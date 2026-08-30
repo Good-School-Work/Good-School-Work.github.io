@@ -1,0 +1,323 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Home - Classroom</title>
+<link rel="icon" type="image/png" href="../images/Icon.png">
+<link rel="stylesheet" href="styles.css">
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #0d0d0d;
+    background-image: radial-gradient(ellipse 80% 50% at 50% -20%, rgba(108,99,255,0.12), transparent);
+    font-family: 'Nunito', Arial, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding-top: 40px;
+    color: #f0f0f0;
+    min-height: 100vh;
+  }
+  a.back-link {
+    align-self: flex-start;
+    margin-left: 24px;
+    margin-bottom: 12px;
+    color: #6c63ff;
+    text-decoration: none;
+    font-weight: 700;
+    font-size: 14px;
+  }
+  a.back-link:hover { text-decoration: underline; }
+  h1 { margin-bottom: 4px; font-weight: 800; }
+  #status { font-size: 13px; margin-bottom: 10px; color: #888; min-height: 18px; font-weight: 700; }
+  #gameCanvas {
+    background: #141414;
+    border: 1.5px solid #3a3a3a;
+    border-radius: 14px;
+  }
+  #scoreboard {
+    display: flex;
+    gap: 26px;
+    margin-top: 14px;
+    font-size: 14px;
+    font-weight: 700;
+    color: #ccc;
+  }
+  #scoreboard span { color: #6c63ff; }
+  #hint { margin-top: 14px; font-size: 13px; color: #888; }
+  #signinNote {
+    margin-top: 12px;
+    font-size: 13px;
+    color: #ffaa00;
+    font-weight: 700;
+    display: none;
+  }
+  #signinNote a { color: #6c63ff; }
+</style>
+</head>
+<body>`r`n  <a href="../index.html" class="back-link">← Back to home</a>
+
+<a href="../index.html" class="back-link">â† Back to home</a>
+<h1>ðŸ¦– No Internet Dino</h1>
+<div id="status">Loading...</div>
+
+<canvas id="gameCanvas" width="600" height="200"></canvas>
+
+<div id="scoreboard">
+  <div>Score: <span id="score">0</span></div>
+  <div>Best (this device): <span id="localBest">0</span></div>
+  <div>Best (your account): <span id="cloudBest">â€“</span></div>
+</div>
+
+<div id="signinNote">Not signed in â€” <a href="../index.html">sign in on the home page</a> to save your score to your account.</div>
+<div id="hint">Press SPACE or tap the game to jump. Press SPACE to start/restart.</div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+  import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyCoK5dtkZwEIo0-1RqqaT3PAI0gUpBLLDQ",
+    authDomain: "good-school-work.github.io",
+    projectId: "good-school-work",
+    storageBucket: "good-school-work.firebasestorage.app",
+    messagingSenderId: "111606118885",
+    appId: "1:111606118885:web:d492e59aa0661e2543d70c"
+  };
+
+  const app  = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db   = getFirestore(app);
+
+  // ---------- Sprite sheet (real Chromium T-Rex assets, BSD-3 licensed) ----------
+  // Save from: https://raw.githubusercontent.com/wayou/t-rex-runner/gh-pages/assets/default_100_percent/100-offline-sprite.png
+  // as games/assets/trex-sprite.png (or update the path below to wherever you put it)
+  const sprite = new Image();
+  let spriteLoaded = false;
+  sprite.onload = () => { spriteLoaded = true; };
+  sprite.onerror = () => { console.warn('trex-sprite.png not found â€” falling back to shapes.'); };
+  sprite.src = 'assets/trex-sprite.png';
+
+  const SPRITE = {
+    TREX:         { x: 848, y: 2, w: 44, h: 47 },
+    CACTUS_SMALL: { x: 228, y: 2, w: 17, h: 35 },
+    CACTUS_LARGE: { x: 332, y: 2, w: 25, h: 50 },
+    CLOUD:        { x: 86,  y: 2, w: 46, h: 14 },
+    HORIZON:      { x: 2,   y: 54, w: 600, h: 12 },
+  };
+
+  // ---------- Game setup ----------
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const GROUND_Y = H - 30;
+
+  const dino = { x: 40, y: GROUND_Y - SPRITE.TREX.h, w: SPRITE.TREX.w, h: SPRITE.TREX.h, vy: 0, jumping: false };
+  const GRAVITY = 0.9;
+  const JUMP_FORCE = -14;
+  const clouds = [{ x: 300, y: 30 }, { x: 500, y: 50 }];
+
+  let obstacles = [];
+  let speed = 6;
+  let frame = 0;
+  let score = 0;
+  let running = false;
+  let gameOver = false;
+
+  const scoreEl = document.getElementById('score');
+  const localBestEl = document.getElementById('localBest');
+  const cloudBestEl = document.getElementById('cloudBest');
+  const statusEl = document.getElementById('status');
+  const signinNote = document.getElementById('signinNote');
+
+  const LOCAL_KEY = 'dinoGameLocalBest';
+  let localBest = parseInt(localStorage.getItem(LOCAL_KEY) || '0', 10);
+  localBestEl.textContent = localBest;
+
+  function resetGame() {
+    obstacles = [];
+    speed = 6;
+    frame = 0;
+    score = 0;
+    dino.y = GROUND_Y - dino.h;
+    dino.vy = 0;
+    dino.jumping = false;
+    gameOver = false;
+    running = true;
+  }
+
+  function spawnObstacle() {
+    const isLarge = Math.random() > 0.5;
+    const def = isLarge ? SPRITE.CACTUS_LARGE : SPRITE.CACTUS_SMALL;
+    obstacles.push({ x: W, y: GROUND_Y - def.h, w: def.w, h: def.h, sprite: def });
+  }
+
+  function update() {
+    frame++;
+    if (frame % Math.max(30, 70 - Math.floor(speed * 2)) === 0) spawnObstacle();
+
+    dino.vy += GRAVITY;
+    dino.y += dino.vy;
+    if (dino.y > GROUND_Y - dino.h) {
+      dino.y = GROUND_Y - dino.h;
+      dino.vy = 0;
+      dino.jumping = false;
+    }
+
+    obstacles.forEach(o => o.x -= speed);
+    obstacles = obstacles.filter(o => o.x + o.w > 0);
+
+    for (const o of obstacles) {
+      if (
+        dino.x < o.x + o.w &&
+        dino.x + dino.w > o.x &&
+        dino.y < o.y + o.h &&
+        dino.y + dino.h > o.y
+      ) {
+        endGame();
+        return;
+      }
+    }
+
+    score += 1;
+    speed += 0.002;
+    scoreEl.textContent = score;
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+
+    if (spriteLoaded) {
+      clouds.forEach(c => {
+        ctx.drawImage(sprite, SPRITE.CLOUD.x, SPRITE.CLOUD.y, SPRITE.CLOUD.w, SPRITE.CLOUD.h,
+          c.x, c.y, SPRITE.CLOUD.w, SPRITE.CLOUD.h);
+      });
+
+      const gw = SPRITE.HORIZON.w;
+      const offset = (frame * speed) % gw;
+      for (let x = -offset; x < W; x += gw) {
+        ctx.drawImage(sprite, SPRITE.HORIZON.x, SPRITE.HORIZON.y, SPRITE.HORIZON.w, SPRITE.HORIZON.h,
+          x, GROUND_Y, SPRITE.HORIZON.w, SPRITE.HORIZON.h);
+      }
+
+      ctx.drawImage(sprite, SPRITE.TREX.x, SPRITE.TREX.y, SPRITE.TREX.w, SPRITE.TREX.h,
+        dino.x, dino.y, dino.w, dino.h);
+
+      obstacles.forEach(o => {
+        ctx.drawImage(sprite, o.sprite.x, o.sprite.y, o.sprite.w, o.sprite.h,
+          o.x, o.y, o.w, o.h);
+      });
+    } else {
+      ctx.strokeStyle = '#666';
+      ctx.beginPath();
+      ctx.moveTo(0, GROUND_Y);
+      ctx.lineTo(W, GROUND_Y);
+      ctx.stroke();
+      ctx.fillStyle = '#f0f0f0';
+      ctx.fillRect(dino.x, dino.y, dino.w, dino.h);
+      ctx.fillStyle = '#6c63ff';
+      obstacles.forEach(o => ctx.fillRect(o.x, o.y, o.w, o.h));
+      ctx.fillStyle = '#888';
+      ctx.font = '11px Nunito, sans-serif';
+      ctx.fillText('Add games/assets/trex-sprite.png for real art', 10, 16);
+    }
+
+    if (!running && !gameOver) {
+      ctx.fillStyle = '#f0f0f0';
+      ctx.font = '16px Nunito, sans-serif';
+      ctx.fillText('Press SPACE to start', W / 2 - 80, H / 2);
+    }
+    if (gameOver) {
+      ctx.fillStyle = '#f0f0f0';
+      ctx.font = '16px Nunito, sans-serif';
+      ctx.fillText('Game over â€” press SPACE to retry', W / 2 - 120, H / 2);
+    }
+  }
+
+  function loop() {
+    if (running) update();
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  function jump() {
+    if (!running || gameOver) { resetGame(); return; }
+    if (!dino.jumping) {
+      dino.vy = JUMP_FORCE;
+      dino.jumping = true;
+    }
+  }
+
+  function endGame() {
+    running = false;
+    gameOver = true;
+
+    if (score > localBest) {
+      localBest = score;
+      localStorage.setItem(LOCAL_KEY, String(localBest));
+      localBestEl.textContent = localBest;
+    }
+
+    saveScoreIfSignedIn(score);
+  }
+
+  document.addEventListener('keydown', e => {
+    if (e.code === 'Space') { e.preventDefault(); jump(); }
+  });
+  canvas.addEventListener('mousedown', jump);
+  canvas.addEventListener('touchstart', e => { e.preventDefault(); jump(); });
+
+  draw();
+  requestAnimationFrame(loop);
+
+  // ---------- Per-account high score (users/{uid}.gameScores.dino) ----------
+  // Matches the same users/{uid} doc your site already uses for ratings/favorites.
+  let currentUser = null;
+
+  async function loadCloudBest(uid) {
+    try {
+      const snap = await getDoc(doc(db, 'users', uid));
+      const best = snap.exists() ? (snap.data().gameScores?.dino || 0) : 0;
+      cloudBestEl.textContent = best;
+      return best;
+    } catch (err) {
+      console.error('Failed to load cloud score:', err);
+      cloudBestEl.textContent = 'error';
+      return 0;
+    }
+  }
+
+  async function saveScoreIfSignedIn(finalScore) {
+    if (!currentUser) return;
+    try {
+      const ref = doc(db, 'users', currentUser.uid);
+      const snap = await getDoc(ref);
+      const currentBest = snap.exists() ? (snap.data().gameScores?.dino || 0) : 0;
+      if (finalScore > currentBest) {
+        await setDoc(ref, { gameScores: { dino: finalScore } }, { merge: true });
+        cloudBestEl.textContent = finalScore;
+      }
+    } catch (err) {
+      console.error('Failed to save score:', err);
+    }
+  }
+
+  onAuthStateChanged(auth, async (user) => {
+    currentUser = user;
+    if (user) {
+      statusEl.textContent = `Signed in as ${user.email}`;
+      signinNote.style.display = 'none';
+      await loadCloudBest(user.uid);
+    } else {
+      statusEl.textContent = 'Not signed in';
+      cloudBestEl.textContent = 'â€“';
+      signinNote.style.display = 'block';
+    }
+  });
+</script>
+
+</body>
+</html>

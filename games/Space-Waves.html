@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Space Waves - Classroom</title>
+<link rel="icon" type="image/png" href="../images/Icon.png">
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #0d0d0d;
+    background-image: radial-gradient(ellipse 80% 50% at 50% -20%, rgba(108,99,255,0.14), transparent);
+    font-family: 'Nunito', Arial, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding-top: 32px;
+    color: #f0f0f0;
+    min-height: 100vh;
+  }
+  a.back-link {
+    align-self: flex-start;
+    margin-left: 24px;
+    margin-bottom: 12px;
+    color: #6c63ff;
+    text-decoration: none;
+    font-weight: 700;
+    font-size: 14px;
+  }
+  a.back-link:hover { text-decoration: underline; }
+  h1 { margin-bottom: 4px; font-weight: 800; }
+  #status { font-size: 13px; margin-bottom: 10px; color: #888; min-height: 18px; font-weight: 700; }
+  #gameCanvas {
+    background: #05050a;
+    border: 1.5px solid #3a3a3a;
+    border-radius: 14px;
+    touch-action: none;
+    cursor: pointer;
+  }
+  #scoreboard {
+    display: flex;
+    gap: 26px;
+    margin-top: 14px;
+    font-size: 14px;
+    font-weight: 700;
+    color: #ccc;
+  }
+  #scoreboard span { color: #00d9ff; }
+  #hint { margin-top: 14px; font-size: 13px; color: #888; }
+  #signinNote {
+    margin-top: 12px;
+    font-size: 13px;
+    color: #ffaa00;
+    font-weight: 700;
+    display: none;
+  }
+  #signinNote a { color: #6c63ff; }
+</style>
+</head>
+<body>
+
+<a href="../index.html" class="back-link">← Back to games</a>
+<h1>🌊 Space Waves</h1>
+<div id="status">Loading...</div>
+
+<canvas id="gameCanvas" width="600" height="300"></canvas>
+
+<div id="scoreboard">
+  <div>Score: <span id="score">0</span></div>
+  <div>Best (this device): <span id="localBest">0</span></div>
+  <div>Best (your account): <span id="cloudBest">–</span></div>
+</div>
+
+<div id="signinNote">Not signed in — <a href="../index.html">sign in on the home page</a> to save your score to your account.</div>
+<div id="hint">Hold SPACE / click and hold to fly up, release to fall. Weave through the gaps!</div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+  import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyCoK5dtkZwEIo0-1RqqaT3PAI0gUpBLLDQ",
+    authDomain: "good-school-work.github.io",
+    projectId: "good-school-work",
+    storageBucket: "good-school-work.firebasestorage.app",
+    messagingSenderId: "111606118885",
+    appId: "1:111606118885:web:d492e59aa0661e2543d70c"
+  };
+
+  const app  = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db   = getFirestore(app);
+  const GAME_KEY = 'spaceWaves';
+
+  // ---------- Canvas setup ----------
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+
+  // ---------- Starfield background (drawn, not fetched) ----------
+  const STAR_COUNT = 90;
+  const stars = Array.from({ length: STAR_COUNT }, () => ({
+    x: Math.random() * W,
+    y: Math.random() * H,
+    r: Math.random() * 1.6 + 0.3,
+    speed: Math.random() * 1.2 + 0.3,
+    tw: Math.random() * Math.PI * 2,
+  }));
+
+  // ---------- Ship (the "wave" trail) ----------
+  const ship = { x: 90, y: H / 2, vy: 0 };
+  const GRAVITY = 0.35;
+  const THRUST = -0.75;
+  const MAX_VY = 7;
+  let holding = false;
+
+  const trail = []; // recent ship positions for the glowing wave line
+  const TRAIL_MAX = 60;
+
+  // ---------- Obstacles (asteroid walls with a gap) ----------
+  let walls = [];
+  const WALL_GAP = 110;
+  const WALL_WIDTH = 26;
+  let wallTimer = 0;
+  let wallInterval = 95;
+
+  let speed = 3.2;
+  let frame = 0;
+  let score = 0;
+  let running = false;
+  let gameOver = false;
+
+  const scoreEl = document.getElementById('score');
+  const localBestEl = document.getElementById('localBest');
+  const cloudBestEl = document.getElementById('cloudBest');
+  const statusEl = document.getElementById('status');
+  const signinNote = document.getElementById('signinNote');
+
+  const LOCAL_KEY = 'spaceWavesLocalBest';
+  let localBest = parseInt(localStorage.getItem(LOCAL_KEY) || '0', 10);
+  localBestEl.textContent = localBest;
+
+  function resetGame() {
+    walls = [];
+    wallTimer = 0;
+    wallInterval = 95;
+    speed = 3.2;
+    frame = 0;
+    score = 0;
+    ship.y = H / 2;
+    ship.vy = 0;
+    trail.length = 0;
+    gameOver = false;
+    running = true;
+  }
+
+  function spawnWall() {
+    const margin = 40;
+    const gapCenter = margin + Math.random() * (H - margin * 2);
+    walls.push({ x: W + WALL_WIDTH, gapCenter, passed: false });
+  }
+
+  function update() {
+    frame++;
+
+    // stars drift
+    stars.forEach(s => {
+      s.x -= s.speed * (speed / 3.2);
+      if (s.x < 0) { s.x = W; s.y = Math.random() * H; }
+      s.tw += 0.05;
+    });
+
+    // ship physics
+    ship.vy += holding ? THRUST : GRAVITY;
+    ship.vy = Math.max(-MAX_VY, Math.min(MAX_VY, ship.vy));
+    ship.y += ship.vy;
+
+    if (ship.y < 12) { ship.y = 12; ship.vy = 0; }
+    if (ship.y > H - 12) { endGame(); return; }
+
+    trail.push({ x: ship.x, y: ship.y });
+    if (trail.length > TRAIL_MAX) trail.shift();
+
+    // walls
+    wallTimer++;
+    if (wallTimer >= wallInterval) {
+      spawnWall();
+      wallTimer = 0;
+    }
+    walls.forEach(w => w.x -= speed);
+    walls = walls.filter(w => w.x + WALL_WIDTH > 0);
+
+    for (const w of walls) {
+      const withinX = ship.x + 8 > w.x && ship.x - 8 < w.x + WALL_WIDTH;
+      const gapTop = w.gapCenter - WALL_GAP / 2;
+      const gapBottom = w.gapCenter + WALL_GAP / 2;
+      const withinGap = ship.y - 7 > gapTop && ship.y + 7 < gapBottom;
+      if (withinX && !withinGap) {
+        endGame();
+        return;
+      }
+      if (!w.passed && w.x + WALL_WIDTH < ship.x) {
+        w.passed = true;
+        score += 1;
+        scoreEl.textContent = score;
+      }
+    }
+
+    speed += 0.0015;
+    wallInterval = Math.max(60, 95 - speed * 3);
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+
+    // deep space gradient
+    const grad = ctx.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0, '#0a0a16');
+    grad.addColorStop(1, '#05050a');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+
+    // stars
+    stars.forEach(s => {
+      ctx.globalAlpha = 0.5 + Math.sin(s.tw) * 0.5;
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.globalAlpha = 1;
+
+    // walls (asteroid-style chunky blocks with glow)
+    walls.forEach(w => {
+      const gapTop = w.gapCenter - WALL_GAP / 2;
+      const gapBottom = w.gapCenter + WALL_GAP / 2;
+      ctx.fillStyle = '#7c5cff';
+      ctx.shadowColor = '#7c5cff';
+      ctx.shadowBlur = 10;
+      ctx.fillRect(w.x, 0, WALL_WIDTH, gapTop);
+      ctx.fillRect(w.x, gapBottom, WALL_WIDTH, H - gapBottom);
+      ctx.shadowBlur = 0;
+    });
+
+    // glowing wave trail
+    if (trail.length > 1) {
+      ctx.beginPath();
+      ctx.moveTo(trail[0].x, trail[0].y);
+      for (let i = 1; i < trail.length; i++) ctx.lineTo(trail[i].x, trail[i].y);
+      ctx.strokeStyle = '#00d9ff';
+      ctx.lineWidth = 3;
+      ctx.shadowColor = '#00d9ff';
+      ctx.shadowBlur = 12;
+      ctx.lineCap = 'round';
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+    }
+
+    // ship (glowing orb + direction fin)
+    ctx.beginPath();
+    ctx.arc(ship.x, ship.y, 8, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.shadowColor = '#00d9ff';
+    ctx.shadowBlur = 18;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.beginPath();
+    ctx.moveTo(ship.x - 10, ship.y);
+    ctx.lineTo(ship.x - 20, ship.y - 5);
+    ctx.lineTo(ship.x - 20, ship.y + 5);
+    ctx.closePath();
+    ctx.fillStyle = '#00d9ff';
+    ctx.fill();
+
+    if (!running && !gameOver) {
+      ctx.fillStyle = '#f0f0f0';
+      ctx.font = 'bold 18px Nunito, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('Hold SPACE / click to start', W / 2, H / 2);
+      ctx.textAlign = 'left';
+    }
+    if (gameOver) {
+      ctx.fillStyle = '#f0f0f0';
+      ctx.font = 'bold 18px Nunito, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('Crashed! Click / press SPACE to retry', W / 2, H / 2);
+      ctx.textAlign = 'left';
+    }
+  }
+
+  function loop() {
+    if (running) update();
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  function startOrRetry() {
+    if (!running) resetGame();
+  }
+
+  function endGame() {
+    running = false;
+    gameOver = true;
+
+    if (score > localBest) {
+      localBest = score;
+      localStorage.setItem(LOCAL_KEY, String(localBest));
+      localBestEl.textContent = localBest;
+    }
+    saveScoreIfSignedIn(score);
+  }
+
+  document.addEventListener('keydown', e => {
+    if (e.code === 'Space') {
+      e.preventDefault();
+      holding = true;
+      if (!running) startOrRetry();
+    }
+  });
+  document.addEventListener('keyup', e => {
+    if (e.code === 'Space') holding = false;
+  });
+  canvas.addEventListener('mousedown', () => { holding = true; startOrRetry(); });
+  canvas.addEventListener('mouseup', () => { holding = false; });
+  canvas.addEventListener('mouseleave', () => { holding = false; });
+  canvas.addEventListener('touchstart', e => { e.preventDefault(); holding = true; startOrRetry(); });
+  canvas.addEventListener('touchend', e => { e.preventDefault(); holding = false; });
+
+  draw();
+  requestAnimationFrame(loop);
+
+  // Fallback: if auth hasn't responded in a few seconds (slow network,
+  // ad blocker, or a sandboxed preview), stop showing "Loading..." so
+  // the page doesn't look stuck. The game itself works either way —
+  // this only affects the status line and cloud score.
+  const authTimeout = setTimeout(() => {
+    if (statusEl.textContent === 'Loading...') {
+      statusEl.textContent = 'Could not reach account service — playing offline.';
+      cloudBestEl.textContent = '–';
+    }
+  }, 6000);
+
+  // ---------- Per-account high score (users/{uid}.gameScores.spaceWaves) ----------
+  let currentUser = null;
+
+  async function loadCloudBest(uid) {
+    try {
+      const snap = await getDoc(doc(db, 'users', uid));
+      const best = snap.exists() ? (snap.data().gameScores?.[GAME_KEY] || 0) : 0;
+      cloudBestEl.textContent = best;
+      return best;
+    } catch (err) {
+      console.error('Failed to load cloud score:', err);
+      cloudBestEl.textContent = 'error';
+      return 0;
+    }
+  }
+
+  async function saveScoreIfSignedIn(finalScore) {
+    if (!currentUser) return;
+    try {
+      const ref = doc(db, 'users', currentUser.uid);
+      const snap = await getDoc(ref);
+      const currentBest = snap.exists() ? (snap.data().gameScores?.[GAME_KEY] || 0) : 0;
+      if (finalScore > currentBest) {
+        await setDoc(ref, { gameScores: { [GAME_KEY]: finalScore } }, { merge: true });
+        cloudBestEl.textContent = finalScore;
+      }
+    } catch (err) {
+      console.error('Failed to save score:', err);
+    }
+  }
+
+  onAuthStateChanged(auth, async (user) => {
+    clearTimeout(authTimeout);
+    currentUser = user;
+    if (user) {
+      statusEl.textContent = `Signed in as ${user.email}`;
+      signinNote.style.display = 'none';
+      await loadCloudBest(user.uid);
+    } else {
+      statusEl.textContent = 'Not signed in';
+      cloudBestEl.textContent = '–';
+      signinNote.style.display = 'block';
+    }
+  });
+</script>
+
+</body>
+</html>

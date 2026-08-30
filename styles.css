@@ -767,6 +767,7 @@ body.has-announcement #category-bar {
   color: var(--subtext);
   display: -webkit-box;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
   min-height: 2.7em;
@@ -1688,6 +1689,7 @@ body.has-announcement .mobile-menu {
   }
   .card-desc {
     -webkit-line-clamp: 1;
+    line-clamp: 1;
     min-height: auto;
   }
   .lb-row {
@@ -1741,39 +1743,39 @@ body.has-announcement .mobile-menu {
 
 /* =========================================  
    AD UNIT  
-========================================= */  
-#ad-frame-2450673 {  
-  width: 70%;  
-  max-width: 500px;  
-  height: 250px;  
-  margin: 32px auto 0;  
-  position: relative;  
-  z-index: 99999;  
-}  
-  
-@media (max-width: 768px) {  
-  #ad-frame-2450673 {  
-    width: 90%;  
-  }  
+========================================= */
+#ad-frame-2450673 {
+  width: 70%;
+  max-width: 500px;
+  height: 250px;
+  margin: 32px auto 0;
+  position: relative;
+  z-index: 99999;
 }
 
-#adblock-bar {  
-  position: fixed;  
-  top: 0;  
-  left: 0;  
-  right: 0;  
-  z-index: 100000; /* above topbar + announcement bar */  
-  display: flex;  
-  align-items: center;  
-  justify-content: center;  
-  gap: 12px;  
-  padding: 8px 20px;  
-  font-size: 13px;  
-  font-weight: 700;  
-  text-align: center;  
-  color: #111;  
-  background: linear-gradient(135deg, #ffd700, #ffb300);  
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);  
+@media (max-width: 768px) {
+  #ad-frame-2450673 {
+    width: 90%;
+  }
+}
+
+#adblock-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100000; /* above topbar + announcement bar */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 8px 20px;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+  color: #111;
+  background: linear-gradient(135deg, #ffd700, #ffb300);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
 }
 
 #ad-frame-login {

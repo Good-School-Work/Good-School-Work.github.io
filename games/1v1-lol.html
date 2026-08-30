@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -79,27 +79,47 @@
     }
     #fullscreen-btn:hover { background: rgba(255,255,255,0.2); }
   </style>
+  <style>  .back-link {
+    position: fixed;
+    top: 14px;
+    left: 16px;
+    z-index: 2000;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 12px;
+    border-radius: 999px;
+    background: rgba(17, 17, 17, 0.8);
+    color: #f3f3f3;
+    text-decoration: none;
+    font: 700 12px/1 'Nunito', Arial, sans-serif;
+    letter-spacing: 0.01em;
+    border: 1px solid rgba(255,255,255,0.12);
+    box-shadow: 0 8px 18px rgba(0,0,0,0.25);
+    backdrop-filter: blur(6px);
+  }
+  .back-link:hover { text-decoration: underline; }</style>
 </head>
-<body>
+<body>`r`n  <a href="../index.html" class="back-link">← Back to home</a>
   <div id="game-viewport">
     <iframe id="game" allowfullscreen allow="fullscreen; autoplay; gamepad; microphone"></iframe>
   </div>
 
   <div id="click-overlay">
-    <h2>🎯 Click to Play 1v1.lol</h2>
-    <p>First load can take up to a minute — please wait</p>
+    <h2>ðŸŽ¯ Click to Play 1v1.lol</h2>
+    <p>First load can take up to a minute â€” please wait</p>
   </div>
 
   <div id="loading">
     <div class="spinner"></div>
-    <p>Loading game…</p>
+    <p>Loading gameâ€¦</p>
     <p id="load-error"></p>
   </div>
 
-  <button id="fullscreen-btn" type="button">⛶ Fullscreen</button>
+  <button id="fullscreen-btn" type="button">â›¶ Fullscreen</button>
 
   <script>
-    /* Full game hosted same-origin on papasgames — fixes 0% stuck cross-origin Unity load */
+    /* Full game hosted same-origin on papasgames â€” fixes 0% stuck cross-origin Unity load */
     const GAME_URL = "https://papasgames.onl/play/1v1lol/";
     const FALLBACK_URL = "https://2048taylorswift.github.io/1v1.lol/";
 
@@ -166,16 +186,18 @@
         } catch (_) {
           try { await document.documentElement.requestFullscreen(); } catch (_) {}
         }
-        btn.textContent = "✕ Exit";
+        btn.textContent = "âœ• Exit";
       } else {
         document.exitFullscreen();
-        btn.textContent = "⛶ Fullscreen";
+        btn.textContent = "â›¶ Fullscreen";
       }
     }
     btn.addEventListener("click", toggleFullscreen);
     document.addEventListener("fullscreenchange", () => {
-      btn.textContent = document.fullscreenElement ? "✕ Exit" : "⛶ Fullscreen";
+      btn.textContent = document.fullscreenElement ? "âœ• Exit" : "â›¶ Fullscreen";
     });
   </script>
 </body>
 </html>
+
+

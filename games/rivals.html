@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -18,25 +18,47 @@
     }
     #fullscreen-btn:hover { background: rgba(255,255,255,0.2); }
   </style>
+  <style>  .back-link {
+    position: fixed;
+    top: 14px;
+    left: 16px;
+    z-index: 2000;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 12px;
+    border-radius: 999px;
+    background: rgba(17, 17, 17, 0.8);
+    color: #f3f3f3;
+    text-decoration: none;
+    font: 700 12px/1 'Nunito', Arial, sans-serif;
+    letter-spacing: 0.01em;
+    border: 1px solid rgba(255,255,255,0.12);
+    box-shadow: 0 8px 18px rgba(0,0,0,0.25);
+    backdrop-filter: blur(6px);
+  }
+  .back-link:hover { text-decoration: underline; }</style>
 </head>
-<body>
-  <button id="fullscreen-btn" onclick="toggleFullscreen()">⛶ Fullscreen</button>
+<body>`r`n  <a href="../index.html" class="back-link">← Back to home</a>
+  <button id="fullscreen-btn" onclick="toggleFullscreen()">â›¶ Fullscreen</button>
   <iframe src="rivals/index.html" allowfullscreen allow="autoplay; fullscreen; gamepad; microphone"></iframe>
   <script>
     function toggleFullscreen() {
       const btn = document.getElementById("fullscreen-btn");
       if (!document.fullscreenElement) {
         document.documentElement.requestFullscreen();
-        btn.textContent = "✕ Exit Fullscreen";
+        btn.textContent = "âœ• Exit Fullscreen";
       } else {
         document.exitFullscreen();
-        btn.textContent = "⛶ Fullscreen";
+        btn.textContent = "â›¶ Fullscreen";
       }
     }
     document.addEventListener("fullscreenchange", () => {
       const btn = document.getElementById("fullscreen-btn");
-      btn.textContent = document.fullscreenElement ? "✕ Exit Fullscreen" : "⛶ Fullscreen";
+      btn.textContent = document.fullscreenElement ? "âœ• Exit Fullscreen" : "â›¶ Fullscreen";
     });
   </script>
 </body>
 </html>
+
+

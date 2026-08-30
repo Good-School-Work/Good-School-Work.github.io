@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -176,17 +176,37 @@
       cursor: pointer;
     }
   </style>
+  <style>  .back-link {
+    position: fixed;
+    top: 14px;
+    left: 16px;
+    z-index: 2000;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 12px;
+    border-radius: 999px;
+    background: rgba(17, 17, 17, 0.8);
+    color: #f3f3f3;
+    text-decoration: none;
+    font: 700 12px/1 'Nunito', Arial, sans-serif;
+    letter-spacing: 0.01em;
+    border: 1px solid rgba(255,255,255,0.12);
+    box-shadow: 0 8px 18px rgba(0,0,0,0.25);
+    backdrop-filter: blur(6px);
+  }
+  .back-link:hover { text-decoration: underline; }</style>
 </head>
-<body>
+<body>`r`n  <a href="../index.html" class="back-link">← Back to home</a>
   <div class="container">
     <div id="start-screen">
-      <h1>🎮 Mystery Game 🎮</h1>
+      <h1>ðŸŽ® Mystery Game ðŸŽ®</h1>
       <div class="instruction">
         Welcome to the Mystery Game!<br>
         This is a special audio-based experience.
       </div>
       <div class="volume-warning">
-        ⚠️ TURN YOUR VOLUME TO MAX ⚠️
+        âš ï¸ TURN YOUR VOLUME TO MAX âš ï¸
       </div>
       <div class="instruction">
         For the best experience, you MUST have your volume at 100%.<br>
@@ -194,7 +214,7 @@
       </div>
       <div class="checkbox-container">
         <input type="checkbox" id="volume-check">
-        <label for="volume-check">✓ I confirm my volume is at maximum (100%)</label>
+        <label for="volume-check">âœ“ I confirm my volume is at maximum (100%)</label>
       </div>
       <button class="play-btn" id="start-btn" disabled>START GAME</button>
     </div>
@@ -261,10 +281,11 @@
           startBtn.disabled = true;
           
           const instruction = document.querySelector('.instruction');
-          instruction.innerHTML = '😂 GOT YOU! 😂<br><br>Hope that wasn\'t too loud! 👻<br><br>Want to try again?';
+          instruction.innerHTML = 'ðŸ˜‚ GOT YOU! ðŸ˜‚<br><br>Hope that wasn\'t too loud! ðŸ‘»<br><br>Want to try again?';
         }, 3000);
       }, 10000);
     });
   </script>
 </body>
 </html>
+

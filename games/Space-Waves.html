@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Space Waves - Classroom</title>
+<title>Home - Classroom</title>
 <link rel="icon" type="image/png" href="../images/Icon.png">
 <style>
   * { box-sizing: border-box; }
@@ -97,6 +97,36 @@
     display: none;
   }
   #signinNote a { color: #6c63ff; }
+  #leaderboardWrap {
+    margin-top: 26px;
+    width: 640px;
+    max-width: 92vw;
+  }
+  #leaderboardWrap h3 {
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #888;
+    margin-bottom: 10px;
+    font-weight: 800;
+  }
+  .lb-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: #141414;
+    border: 1px solid #2e2e2e;
+    border-radius: 10px;
+    padding: 8px 14px;
+    margin-bottom: 6px;
+    font-size: 13px;
+    font-weight: 700;
+  }
+  .lb-rank { width: 22px; color: #6c63ff; flex-shrink: 0; }
+  .lb-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lb-score { color: #00e5ff; flex-shrink: 0; }
+  .lb-me { border-color: #6c63ff; box-shadow: 0 0 0 1px #6c63ff inset; }
+  #leaderboardList p { color: #888; font-size: 13px; font-weight: 700; }
 </style>
 </head>
 <body>
@@ -118,12 +148,17 @@
 </div>
 
 <div id="signinNote">Not signed in — <a href="../index.html">sign in on the home page</a> to save your score to your account.</div>
-<div id="hint">Hold SPACE / click and hold to fly diagonally up, release to dive diagonally down. Floor and ceiling are safe to ride — only obstacles end your run. ⛶ for fullscreen.</div>
+<div id="hint">Hold SPACE / click and hold to fly diagonally up, release to dive diagonally down. Floor and ceiling are safe to ride. Watch for drifting gears and timed laser gates! ⛶ for fullscreen.</div>
+
+<div id="leaderboardWrap">
+  <h3>🏆 Top Scores</h3>
+  <div id="leaderboardList">Loading leaderboard…</div>
+</div>
 
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
   import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-  import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+  import { getFirestore, doc, getDoc, setDoc, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyCoK5dtkZwEIo0-1RqqaT3PAI0gUpBLLDQ",
@@ -216,6 +251,7 @@
   // ---------- Obstacles: alternating spike-ridges and gears ----------
   let obstacles = [];
   const GAP = 105;
+  const LASER_GAP = 85; // slightly tighter than the normal gap for variety
   const RIDGE_WIDTH = 120;
   let obTimer = 0;
   let obInterval = 130;
@@ -257,8 +293,18 @@
   function spawnObstacle() {
     const margin = 46;
     const gapCenter = margin + Math.random() * (H - margin * 2);
-    const type = Math.random() > 0.55 ? 'gear' : 'spikes';
-    obstacles.push({ x: W + 30, gapCenter, type, passed: false, rot: 0 });
+    const roll = Math.random();
+    let type;
+    if (roll < 0.35) type = 'spikes';
+    else if (roll < 0.6) type = 'gear';
+    else if (roll < 0.82) type = 'driftGear';
+    else type = 'laser';
+    obstacles.push({
+      x: W + 30, gapCenter, type, passed: false, rot: 0,
+      spawnFrame: frame,
+      driftAmp: 30 + Math.random() * 30,
+      driftSpeed: 0.03 + Math.random() * 0.02,
+    });
   }
 
   // Generates the exact zigzag vertex path used both for drawing and
@@ -347,11 +393,26 @@
           const bottomSolidY = ridgeYAtX(bottomVerts, ship.x);
           if (ship.y - 8 < topSolidY || ship.y + 8 > bottomSolidY) { endGame(); return; }
         }
-      } else {
+      } else if (o.type === 'gear') {
         const gearR = 26;
         const dx = ship.x - o.x, dy = ship.y - o.gapCenter;
         const dist = Math.sqrt(dx * dx + dy * dy);
         if (dist < gearR + 9) { endGame(); return; }
+      } else if (o.type === 'driftGear') {
+        const gearR = 24;
+        const driftY = o.gapCenter + Math.sin((frame - o.spawnFrame) * o.driftSpeed) * o.driftAmp;
+        const dx = ship.x - o.x, dy = ship.y - driftY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < gearR + 9) { endGame(); return; }
+      } else if (o.type === 'laser') {
+        // A fixed beam with a physical gap — dodgeable by vertical
+        // position, same as everything else. (A timed on/off gate
+        // gave the player no way to actually influence when they'd
+        // arrive, since forward speed isn't under their control.)
+        const laserGapTop = o.gapCenter - LASER_GAP / 2;
+        const laserGapBottom = o.gapCenter + LASER_GAP / 2;
+        const withinX = ship.x + 9 > o.x - 6 && ship.x - 9 < o.x + 6;
+        if (withinX && (ship.y - 8 < laserGapTop || ship.y + 8 > laserGapBottom)) { endGame(); return; }
       }
 
       if (!o.passed && o.x < ship.x) {
@@ -465,8 +526,13 @@
       if (o.type === 'spikes') {
         drawSpikeRidge(o.x, 0, gapTop, theme.accent);
         drawSpikeRidge(o.x, H, gapBottom, theme.accent);
-      } else {
+      } else if (o.type === 'gear') {
         drawGear(o.x, o.gapCenter, 26, o.rot, theme.accent);
+      } else if (o.type === 'driftGear') {
+        const driftY = o.gapCenter + Math.sin((frame - o.spawnFrame) * o.driftSpeed) * o.driftAmp;
+        drawGear(o.x, driftY, 24, o.rot, theme.core);
+      } else if (o.type === 'laser') {
+        drawLaser(o.x, o.gapCenter);
       }
     });
 
@@ -520,6 +586,27 @@
     ctx.shadowBlur = 0;
   }
 
+  function drawLaser(x, gapCenter) {
+    const gapTop = gapCenter - LASER_GAP / 2;
+    const gapBottom = gapCenter + LASER_GAP / 2;
+    const pulse = 0.75 + Math.sin(frame * 0.15) * 0.25; // purely visual flair
+    ctx.save();
+    ctx.strokeStyle = '#ff3b5c';
+    ctx.shadowColor = '#ff3b5c';
+    ctx.shadowBlur = 10 + pulse * 6;
+    ctx.lineWidth = 4;
+    ctx.globalAlpha = pulse;
+    ctx.beginPath();
+    ctx.moveTo(x, 4);
+    ctx.lineTo(x, gapTop);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x, gapBottom);
+    ctx.lineTo(x, H - 4);
+    ctx.stroke();
+    ctx.restore();
+  }
+
   function centerText(text, color) {
     ctx.fillStyle = '#f0f0f0';
     ctx.font = 'bold 18px Nunito, sans-serif';
@@ -567,6 +654,7 @@
 
   draw();
   requestAnimationFrame(loop);
+  loadLeaderboard();
 
   const authTimeout = setTimeout(() => {
     if (statusEl.textContent === 'Loading...') {
@@ -590,6 +678,39 @@
     }
   }
 
+  async function loadLeaderboard() {
+    const listEl = document.getElementById('leaderboardList');
+    try {
+      const snap = await getDocs(collection(db, 'users'));
+      const rows = [];
+      snap.forEach(d => {
+        const data = d.data();
+        const s = data.gameScores?.[GAME_KEY];
+        if (typeof s === 'number' && s > 0) {
+          rows.push({ uid: d.id, name: data.displayName || (data.email ? data.email.split('@')[0] : 'Player'), score: s });
+        }
+      });
+      rows.sort((a, b) => b.score - a.score);
+      const top = rows.slice(0, 10);
+      if (!top.length) {
+        listEl.innerHTML = '<p>No scores yet — be the first!</p>';
+        return;
+      }
+      const medals = ['🥇', '🥈', '🥉'];
+      listEl.innerHTML = top.map((r, i) => {
+        const isMe = currentUser && r.uid === currentUser.uid;
+        return `<div class="lb-row${isMe ? ' lb-me' : ''}">
+          <span class="lb-rank">${medals[i] || (i + 1)}</span>
+          <span class="lb-name">${r.name}${isMe ? ' (you)' : ''}</span>
+          <span class="lb-score">${r.score}</span>
+        </div>`;
+      }).join('');
+    } catch (err) {
+      console.error('Failed to load leaderboard:', err);
+      listEl.innerHTML = '<p>Could not load leaderboard.</p>';
+    }
+  }
+
   async function saveScoreIfSignedIn(finalScore) {
     if (!currentUser) return;
     try {
@@ -599,6 +720,7 @@
       if (finalScore > currentBest) {
         await setDoc(ref, { gameScores: { [GAME_KEY]: finalScore } }, { merge: true });
         cloudBestEl.textContent = finalScore;
+        loadLeaderboard();
       }
     } catch (err) {
       console.error('Failed to save score:', err);
@@ -612,6 +734,7 @@
       statusEl.textContent = `Signed in as ${user.email}`;
       signinNote.style.display = 'none';
       await loadCloudBest(user.uid);
+      loadLeaderboard();
     } else {
       statusEl.textContent = 'Not signed in';
       cloudBestEl.textContent = '–';

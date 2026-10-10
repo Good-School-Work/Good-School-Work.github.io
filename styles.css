@@ -372,6 +372,7 @@ body.has-announcement {
 ========================================= */
 #name-modal,
 #suggestion-modal,
+#ban-modal,
 #warn-modal {
   position: fixed;
   inset: 0;

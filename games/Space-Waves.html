@@ -158,7 +158,7 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
   import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-  import { getFirestore, doc, getDoc, setDoc, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+  import { getFirestore, doc, getDoc, setDoc, collection, getDocs, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyCoK5dtkZwEIo0-1RqqaT3PAI0gUpBLLDQ",
@@ -665,11 +665,26 @@
 
   let currentUser = null;
 
+  // The leaderboard lives in its own public collection (scores/<game>/entries/<uid>) so it doesn't
+  // have to download every player's account (emails etc.) just to show 10 names.
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const entryRef = uid => doc(db, 'scores', GAME_KEY, 'entries', uid);
+  async function publishScore(uid, name, score) {
+    try { await setDoc(entryRef(uid), { name: String(name || 'Player').slice(0, 24), score }); }
+    catch (err) { console.warn('Could not publish score:', err); }
+  }
+
   async function loadCloudBest(uid) {
     try {
       const snap = await getDoc(doc(db, 'users', uid));
       const best = snap.exists() ? (snap.data().gameScores?.[GAME_KEY] || 0) : 0;
       cloudBestEl.textContent = best;
+      if (best > 0) {   // make sure existing high scores show up on the new leaderboard
+        const e = await getDoc(entryRef(uid));
+        if (!e.exists() || (e.data().score || 0) < best) {
+          await publishScore(uid, snap.data().displayName || (snap.data().email || '').split('@')[0], best);
+        }
+      }
       return best;
     } catch (err) {
       console.error('Failed to load cloud score:', err);
@@ -681,16 +696,12 @@
   async function loadLeaderboard() {
     const listEl = document.getElementById('leaderboardList');
     try {
-      const snap = await getDocs(collection(db, 'users'));
+      const snap = await getDocs(query(collection(db, 'scores', GAME_KEY, 'entries'), orderBy('score', 'desc'), limit(10)));
       const rows = [];
       snap.forEach(d => {
         const data = d.data();
-        const s = data.gameScores?.[GAME_KEY];
-        if (typeof s === 'number' && s > 0) {
-          rows.push({ uid: d.id, name: data.displayName || (data.email ? data.email.split('@')[0] : 'Player'), score: s });
-        }
+        if (typeof data.score === 'number' && data.score > 0) rows.push({ uid: d.id, name: data.name || 'Player', score: data.score });
       });
-      rows.sort((a, b) => b.score - a.score);
       const top = rows.slice(0, 10);
       if (!top.length) {
         listEl.innerHTML = '<p>No scores yet — be the first!</p>';
@@ -701,7 +712,7 @@
         const isMe = currentUser && r.uid === currentUser.uid;
         return `<div class="lb-row${isMe ? ' lb-me' : ''}">
           <span class="lb-rank">${medals[i] || (i + 1)}</span>
-          <span class="lb-name">${r.name}${isMe ? ' (you)' : ''}</span>
+          <span class="lb-name">${esc(r.name)}${isMe ? ' (you)' : ''}</span>
           <span class="lb-score">${r.score}</span>
         </div>`;
       }).join('');
@@ -719,6 +730,7 @@
       const currentBest = snap.exists() ? (snap.data().gameScores?.[GAME_KEY] || 0) : 0;
       if (finalScore > currentBest) {
         await setDoc(ref, { gameScores: { [GAME_KEY]: finalScore } }, { merge: true });
+        await publishScore(currentUser.uid, snap.data()?.displayName || (currentUser.email || '').split('@')[0], finalScore);
         cloudBestEl.textContent = finalScore;
         loadLeaderboard();
       }
@@ -743,5 +755,9 @@
   });
 </script>
 
+<script type="module">
+  import { startGuard } from "../moderation.js";
+  startGuard();   // live kick / ban / warn + login check (see moderation.js)
+</script>
 </body>
 </html>

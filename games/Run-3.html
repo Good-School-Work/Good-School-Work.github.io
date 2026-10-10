@@ -54,9 +54,10 @@
   }
   .back-link:hover { text-decoration: underline; }</style>
 </head>
-<body>`r`n  <a href="../index.html" class="back-link">← Back to home</a>
+<body>
+  <a href="../index.html" class="back-link">← Back to home</a>
 
-  <button id="fullscreen-btn" onclick="toggleFullscreen()">â›¶ Fullscreen</button>
+  <button id="fullscreen-btn" onclick="toggleFullscreen()">⛶ Fullscreen</button>
   <iframe id="game" src="https://chompypotato.github.io/run3/" allowfullscreen></iframe>
 
   <script>
@@ -64,20 +65,24 @@
       const btn = document.getElementById("fullscreen-btn");
       if (!document.fullscreenElement) {
         document.documentElement.requestFullscreen();
-        btn.textContent = "âœ• Exit Fullscreen";
+        btn.textContent = "✕ Exit Fullscreen";
       } else {
         document.exitFullscreen();
-        btn.textContent = "â›¶ Fullscreen";
+        btn.textContent = "⛶ Fullscreen";
       }
     }
 
     // Update button text if user presses Escape to exit fullscreen
     document.addEventListener("fullscreenchange", () => {
       const btn = document.getElementById("fullscreen-btn");
-      btn.textContent = document.fullscreenElement ? "âœ• Exit Fullscreen" : "â›¶ Fullscreen";
+      btn.textContent = document.fullscreenElement ? "✕ Exit Fullscreen" : "⛶ Fullscreen";
     });
   </script>
 
+<script type="module">
+  import { startGuard } from "../moderation.js";
+  startGuard();   // live kick / ban / warn + login check (see moderation.js)
+</script>
 </body>
 </html>
 

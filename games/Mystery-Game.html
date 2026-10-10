@@ -197,16 +197,17 @@
   }
   .back-link:hover { text-decoration: underline; }</style>
 </head>
-<body>`r`n  <a href="../index.html" class="back-link">← Back to home</a>
+<body>
+  <a href="../index.html" class="back-link">← Back to home</a>
   <div class="container">
     <div id="start-screen">
-      <h1>ðŸŽ® Mystery Game ðŸŽ®</h1>
+      <h1>🎮 Mystery Game 🎮</h1>
       <div class="instruction">
         Welcome to the Mystery Game!<br>
         This is a special audio-based experience.
       </div>
       <div class="volume-warning">
-        âš ï¸ TURN YOUR VOLUME TO MAX âš ï¸
+        ⚠ï¸ TURN YOUR VOLUME TO MAX ⚠ï¸
       </div>
       <div class="instruction">
         For the best experience, you MUST have your volume at 100%.<br>
@@ -214,7 +215,7 @@
       </div>
       <div class="checkbox-container">
         <input type="checkbox" id="volume-check">
-        <label for="volume-check">âœ“ I confirm my volume is at maximum (100%)</label>
+        <label for="volume-check">✓ I confirm my volume is at maximum (100%)</label>
       </div>
       <button class="play-btn" id="start-btn" disabled>START GAME</button>
     </div>
@@ -281,11 +282,15 @@
           startBtn.disabled = true;
           
           const instruction = document.querySelector('.instruction');
-          instruction.innerHTML = 'ðŸ˜‚ GOT YOU! ðŸ˜‚<br><br>Hope that wasn\'t too loud! ðŸ‘»<br><br>Want to try again?';
+          instruction.innerHTML = '😂 GOT YOU! 😂<br><br>Hope that wasn\'t too loud! 👻<br><br>Want to try again?';
         }, 3000);
       }, 10000);
     });
   </script>
+<script type="module">
+  import { startGuard } from "../moderation.js";
+  startGuard();   // live kick / ban / warn + login check (see moderation.js)
+</script>
 </body>
 </html>
 

@@ -55,11 +55,12 @@ iframe { width: 100%; height: 100%; border: none; display: block; }
   }
   .back-link:hover { text-decoration: underline; }</style>
 </head>
-<body>`r`n  <a href="../index.html" class="back-link">← Back to home</a>
+<body>
+  <a href="../index.html" class="back-link">← Back to home</a>
 
 <iframe id="gameFrame" allowfullscreen></iframe>
 <div id="clickOverlay">CLICK ANYWHERE TO START</div>
-<button id="fullscreen-btn" onclick="toggleFullscreen()">â›¶ Fullscreen</button>
+<button id="fullscreen-btn" onclick="toggleFullscreen()">⛶ Fullscreen</button>
 
 <script>
 const DB_NAME = 'GameCacheDB';
@@ -131,18 +132,22 @@ overlay.addEventListener("click", async () => {
 function toggleFullscreen() {
   if (!document.fullscreenElement) {
     document.documentElement.requestFullscreen();
-    btn.textContent = "âœ• Exit Fullscreen";
+    btn.textContent = "✕ Exit Fullscreen";
   } else {
     document.exitFullscreen();
-    btn.textContent = "â›¶ Fullscreen";
+    btn.textContent = "⛶ Fullscreen";
   }
 }
 
 document.addEventListener("fullscreenchange", () => {
-  btn.textContent = document.fullscreenElement ? "âœ• Exit Fullscreen" : "â›¶ Fullscreen";
+  btn.textContent = document.fullscreenElement ? "✕ Exit Fullscreen" : "⛶ Fullscreen";
 });
 </script>
 
+<script type="module">
+  import { startGuard } from "../moderation.js";
+  startGuard();   // live kick / ban / warn + login check (see moderation.js)
+</script>
 </body>
 </html>
 

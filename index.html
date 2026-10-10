@@ -11,25 +11,18 @@
   <link rel="stylesheet" href="styles.css">
 
   <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
     import {
-      getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
+      GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
       createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
     import {
-      getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc,
-      collection, getDocs, increment, onSnapshot, addDoc, query, orderBy
+      doc, getDoc, setDoc, updateDoc, deleteDoc,
+      collection, getDocs, increment, onSnapshot, query, orderBy, limit, addDoc, serverTimestamp
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-
-    /* ── CONFIG ─────────────────────────────────────────────────────────────── */
-    const firebaseConfig = {
-      apiKey: "AIzaSyCoK5dtkZwEIo0-1RqqaT3PAI0gUpBLLDQ",
-      authDomain: "good-school-work.github.io",
-      projectId: "good-school-work",
-      storageBucket: "good-school-work.firebasestorage.app",
-      messagingSenderId: "111606118885",
-      appId: "1:111606118885:web:d492e59aa0661e2543d70c"
-    };
+    import {
+      auth, db, esc, slug, tsMs, isBanActive, renderBanScreen, watchForUnban, showWarnOverlay,
+      looksLikeTroll, submitBlockReason, submitFeedback, openReportModal, MAX_STRIKES
+    } from "./moderation.js";
 
     const OWNER_EMAILS = ["dragon.playz933@gmail.com", "ehanahmad@tahuna.school.nz"];
     const ADMIN_EMAILS = ["dragon.playz933@gmail.com", "ehanahmad@tahuna.school.nz", "shaneunahi-harding@tahuna.school.nz"];
@@ -62,10 +55,7 @@
     const CATEGORIES = ["all","racing","puzzle","action","creative","casual"];
 
     /* ── FIREBASE INIT ──────────────────────────────────────────────────────── */
-    const app      = initializeApp(firebaseConfig);
-    const auth     = getAuth(app);
-    const db       = getFirestore(app);
-    const provider = new GoogleAuthProvider();
+    const provider = new GoogleAuthProvider();   // app / auth / db come from moderation.js
 
     /* ── STATE ──────────────────────────────────────────────────────────────── */
     let userData        = {};
@@ -76,6 +66,7 @@
     let searchQuery     = "";
     let isSignUpMode    = false;
     let userUnsubscribe = null;
+    let kickedNotice    = false;
 
     /* ── HELPERS ────────────────────────────────────────────────────────────── */
     function showToast(msg, ms = 2400) {
@@ -231,26 +222,50 @@
       const btn   = document.getElementById("suggestion-submit-btn");
       const name  = input.value.trim();
       err.textContent = ""; succ.textContent = "";
-      if (!name)           { err.textContent = "Please enter a game name."; return; }
+      if (!name)             { err.textContent = "Please enter a game name."; return; }
       if (name.length > 100) { err.textContent = "Keep it under 100 characters!"; return; }
+      const junk = looksLikeTroll(name);
+      if (junk)              { err.textContent = junk; return; }
+      if (!slug(name))       { err.textContent = "Please use letters or numbers in the game name."; return; }
+      const norm = name.toLowerCase().replace(/[^a-z0-9]/g, "");
+      if (GAMES.some(g => g.name.toLowerCase().replace(/[^a-z0-9]/g, "") === norm)) {
+        err.textContent = "We already have that game! 🎉"; return;
+      }
+      const user = auth.currentUser;
+      if (!user) return;
       btn.disabled = true; btn.textContent = "Sending…";
       try {
-        const user = auth.currentUser;
-        await addDoc(collection(db, "suggestions"), {
+        const fresh = (await getDoc(doc(db, "users", user.uid))).data();
+        const why = submitBlockReason(fresh);
+        if (why) { err.textContent = why; return; }
+        // id = the game name, so the same game can't be suggested twice (the rules reject duplicates)
+        await submitFeedback("suggestions", "s_" + slug(name), {
           game: name,
-          submittedBy: user?.email || "anonymous",
-          displayName: userData.displayName || "",
-          uid: user?.uid || null,
-          timestamp: new Date().toISOString()
+          submittedBy: user.email || "anonymous",
+          displayName: fresh?.displayName || ""
         });
         input.value = "";
         succ.textContent = "✅ Suggestion sent! Thanks!";
         setTimeout(() => { closeSuggestionModal(); }, 1800);
       } catch(e) {
-        err.textContent = "Failed to send. Try again.";
+        err.textContent = e.code === "permission-denied"
+          ? "Someone already suggested that one (or you're sending too fast)."
+          : "Failed to send. Try again.";
       } finally {
         btn.disabled = false; btn.textContent = "Submit";
       }
+    };
+
+    /* ── REPORTS ────────────────────────────────────────────────────────────── */
+    const gameFile = g => g.href.split("/").pop().replace(/\.html$/i, "");
+    window.openReport = (gameId) => openReportModal({
+      gameId: gameId || "",
+      games: GAMES.map(g => ({ id: gameFile(g), name: g.name }))
+    });
+    window.reportGame = (id, e) => {
+      e.preventDefault(); e.stopPropagation();
+      const g = GAMES.find(x => x.id === id);
+      window.openReport(g ? gameFile(g) : "");
     };
 
     /* ── SHARE GAME ─────────────────────────────────────────────────────────── */
@@ -288,7 +303,10 @@
         </div>
         <div class="card-footer">
           <div class="card-plays" data-game="${g.id}">🎮 0 plays</div>
-          <button class="share-btn" onclick="shareGame('${g.id}',event)" title="Copy link">🔗</button>
+          <span style="display:flex;gap:4px">
+            <button class="share-btn" onclick="reportGame('${g.id}',event)" title="Report a problem">🚩</button>
+            <button class="share-btn" onclick="shareGame('${g.id}',event)" title="Copy link">🔗</button>
+          </span>
         </div>
       </div>
     </a>`).join("");
@@ -528,7 +546,7 @@
             );
             document.getElementById("user-list-inner").innerHTML = filtered.length
               ? filtered.map(u=>userRow(u,viewerIsOwner,viewerIsAdmin)).join("")
-              : `<p style="color:var(--subtext);text-align:center;padding:20px 0">No users matching "${q}"</p>`;
+              : `<p style="color:var(--subtext);text-align:center;padding:20px 0">No users matching "${esc(q)}"</p>`;
           });
         } catch(e) { body.innerHTML=`<p style="color:var(--danger);">Error: ${e.message}</p>`; }
 
@@ -538,9 +556,16 @@
             <label>Ban a user by email</label>
             <div class="ban-input-row">
               <input class="admin-input" id="ban-email-input" type="email" placeholder="user@example.com"/>
+              <select class="admin-input" id="ban-email-duration" style="max-width:130px">
+                <option value="3600000">1 hour</option><option value="86400000">1 day</option>
+                <option value="604800000">7 days</option><option value="0" selected>Permanent</option>
+              </select>
+            </div>
+            <div class="ban-input-row" style="margin-top:8px">
+              <input class="admin-input" id="ban-email-reason" placeholder="Reason (shown to the user)" maxlength="200"/>
               <button class="admin-submit" id="ban-email-btn">Ban</button>
             </div>
-            <div class="admin-note">⚠️ Searches Firestore for the email and sets them as banned. They'll be live-kicked immediately.</div>
+            <div class="admin-note">⚠️ Finds the account and bans it. If they're playing a game right now they're sent to the main site and see the ban screen instantly.</div>
             <div id="ban-email-result" style="margin-top:10px;font-size:13px;font-weight:700;"></div>
           </div>`;
         document.getElementById("ban-email-btn").addEventListener("click", async () => {
@@ -550,15 +575,40 @@
           if (ownerSet.has(email)) { result.style.color="var(--danger)"; result.textContent="❌ You cannot ban an owner."; return; }
           result.style.color="var(--subtext)"; result.textContent="Searching...";
           const snap = await getDocs(collection(db,"users"));
-          let found = false;
-          for (const d of snap.docs) {
-            if ((d.data().email||"").toLowerCase()===email) {
-              await updateDoc(doc(db,"users",d.id), { banned:true });
-              found=true; result.style.color="var(--success)"; result.textContent=`✅ Banned ${email}`; showToast(`🚫 Banned ${email}`); break;
-            }
-          }
-          if (!found) { result.style.color="var(--danger)"; result.textContent=`❌ No account found for: ${email}`; }
+          const hit  = snap.docs.find(d => (d.data().email||"").toLowerCase()===email);
+          if (!hit) { result.style.color="var(--danger)"; result.textContent=`❌ No account found for: ${email}`; return; }
+          if (hit.data().isAdmin && !viewerIsOwner) { result.style.color="var(--danger)"; result.textContent="❌ Only an owner can ban an admin."; return; }
+          await doBan(hit.id, email,
+            document.getElementById("ban-email-reason").value.trim(),
+            parseInt(document.getElementById("ban-email-duration").value, 10));
+          result.style.color="var(--success)"; result.textContent=`✅ Banned ${email}`;
         });
+
+      } else if (tab === "reports") {
+        body.innerHTML = `<div class="center"><div class="spin"></div></div>`;
+        try {
+          const snap = await getDocs(query(collection(db,"reports"), orderBy("timestamp","desc")));
+          if (snap.empty) { body.innerHTML = `<p style="color:var(--subtext);text-align:center;margin-top:20px;">No reports 🎉</p>`; return; }
+          const rows = []; snap.forEach(d => rows.push({ id:d.id, ...d.data() }));
+          const perGame = {};
+          rows.forEach(r => { const k = r.gameId || "(general)"; perGame[k] = (perGame[k]||0) + 1; });
+          const chips = Object.entries(perGame).sort((a,b)=>b[1]-a[1]).map(([k,n]) =>
+            `<span class="badge ${n>=3?"banned":"active"}" style="margin:0 6px 6px 0">${esc(gameLabel(k))}: ${n}</span>`).join("");
+          body.innerHTML = `<div style="margin-bottom:12px">${chips}</div><div class="user-list" id="report-list">${rows.map(reportRow).join("")}</div>`;
+        } catch(e) { body.innerHTML=`<p style="color:var(--danger);">Error: ${esc(e.message)}</p>`; }
+
+      } else if (tab === "log") {
+        body.innerHTML = `<div class="center"><div class="spin"></div></div>`;
+        try {
+          const snap = await getDocs(query(collection(db,"modlog"), orderBy("timestamp","desc"), limit(60)));
+          if (snap.empty) { body.innerHTML = `<p style="color:var(--subtext);text-align:center;margin-top:20px;">Nothing logged yet.</p>`; return; }
+          const rows = []; snap.forEach(d => rows.push(d.data()));
+          body.innerHTML = `<div class="user-list">${rows.map(r => `
+            <div class="suggestion-row"><div style="flex:1;min-width:0">
+              <div class="suggestion-game">${esc(r.action)} → ${esc(r.target||"")}</div>
+              <div class="suggestion-meta">by ${esc(r.by||"?")} · ${r.timestamp?new Date(r.timestamp).toLocaleString():""}${r.detail?" · "+esc(r.detail):""}</div>
+            </div></div>`).join("")}</div>`;
+        } catch(e) { body.innerHTML=`<p style="color:var(--danger);">Error: ${esc(e.message)}</p>`; }
 
       } else if (tab === "suggestions") {
         body.innerHTML = `<div class="center"><div class="spin"></div></div>`;
@@ -571,7 +621,7 @@
           const rows = [];
           snap.forEach(d => rows.push({ id:d.id, ...d.data() }));
           body.innerHTML = `<div class="user-list" id="suggestion-list">${rows.map(s => suggestionRow(s)).join("")}</div>`;
-        } catch(e) { body.innerHTML=`<p style="color:var(--danger);">Error: ${e.message}</p>`; }
+        } catch(e) { body.innerHTML=`<p style="color:var(--danger);">Error: ${esc(e.message)}</p>`; }
 
       } else if (tab === "stats") {
         body.innerHTML = `<div class="center"><div class="spin"></div></div>`;
@@ -614,7 +664,7 @@
         body.innerHTML = `
           <div class="ban-by-email">
             <label>Announcement Banner</label>
-            <textarea class="admin-input admin-textarea" id="announce-input" placeholder="Type a message for all users… (leave empty to hide)">${cur}</textarea>
+            <textarea class="admin-input admin-textarea" id="announce-input" placeholder="Type a message for all users… (leave empty to hide)">${esc(cur)}</textarea>
             <div style="display:flex;gap:10px">
               <button class="admin-submit" id="announce-save" style="background:var(--accent)">📢 Publish</button>
               <button class="admin-submit" id="announce-clear">✕ Clear</button>
@@ -651,26 +701,77 @@
       const time = s.timestamp ? new Date(s.timestamp).toLocaleString() : "Unknown time";
       const who  = s.displayName ? `${s.displayName} (${s.submittedBy})` : s.submittedBy;
       return `
-        <div class="suggestion-row" id="sug-${s.id}">
+        <div class="suggestion-row" id="sug-${esc(s.id)}">
           <div style="flex:1;min-width:0">
-            <div class="suggestion-game">💡 ${s.game}</div>
-            <div class="suggestion-meta">by ${who} · ${time}</div>
+            <div class="suggestion-game">💡 ${esc(s.game)}</div>
+            <div class="suggestion-meta">by ${esc(who)} · ${esc(time)}</div>
           </div>
-          <button class="suggestion-del" onclick="deleteSuggestion('${s.id}')">✕ Dismiss</button>
+          <button class="suggestion-del" data-id="${esc(s.id)}" onclick="deleteSuggestion(this.dataset.id)">✕ Dismiss</button>
+          ${s.uid ? `<button class="suggestion-del" style="color:#ff9f43" data-id="${esc(s.id)}" data-uid="${esc(s.uid)}" data-email="${esc(s.submittedBy)}" onclick="markTroll('suggestions',this.dataset.id,this.dataset.uid,this.dataset.email)">🧌 Troll</button>` : ""}
         </div>`;
     }
 
-    window.deleteSuggestion = async (id) => {
+    const gameLabel = k => { const g = GAMES.find(x => gameFile(x) === k); return g ? g.name : k; };
+    function reportRow(r) {
+      const time = r.timestamp ? new Date(r.timestamp).toLocaleString() : "Unknown time";
+      const who  = r.reporterName ? `${r.reporterName} (${r.reporterEmail})` : r.reporterEmail;
+      const types = { broken:"🛠️ Broken", bug:"🐞 Bug", inappropriate:"🔞 Inappropriate", user:"👤 Player", other:"💬 Other" };
+      return `
+        <div class="suggestion-row" id="rep-${esc(r.id)}">
+          <div style="flex:1;min-width:0">
+            <div class="suggestion-game">${esc(types[r.type]||r.type)}${r.gameId ? " · "+esc(gameLabel(r.gameId)) : ""}</div>
+            <div style="margin:4px 0;word-break:break-word">${esc(r.details)}</div>
+            <div class="suggestion-meta">by ${esc(who)} · ${esc(time)}</div>
+          </div>
+          <button class="suggestion-del" style="color:#4cd964" data-id="${esc(r.id)}" onclick="resolveReport(this.dataset.id)">✔ Resolve</button>
+          <button class="suggestion-del" data-id="${esc(r.id)}" onclick="resolveReport(this.dataset.id,true)">✕ Dismiss</button>
+          ${r.uid ? `<button class="suggestion-del" style="color:#ff9f43" data-id="${esc(r.id)}" data-uid="${esc(r.uid)}" data-email="${esc(r.reporterEmail)}" onclick="markTroll('reports',this.dataset.id,this.dataset.uid,this.dataset.email)">🧌 Troll</button>` : ""}
+        </div>`;
+    }
+    window.resolveReport = async (id) => {
       try {
-        await deleteDoc(doc(db, "suggestions", id));
-        const el = document.getElementById(`sug-${id}`);
-        if (el) el.remove();
-        const list = document.getElementById("suggestion-list");
-        if (list && !list.children.length) {
-          list.innerHTML = `<p style="color:var(--subtext);text-align:center;padding:20px 0">No more suggestions!</p>`;
-        }
-      } catch(e) { showToast("Couldn't delete suggestion."); }
+        await deleteDoc(doc(db,"reports",id));
+        document.getElementById("rep-"+id)?.remove();
+        logAction("report resolved", id);
+      } catch(e) { showToast("Couldn't update report."); }
     };
+
+    /* ── TROLL STRIKES ──────────────────────────────────────────────────────── */
+    // Flags a submission as spam/troll: deletes it, gives the sender a strike + auto warning.
+    // At MAX_STRIKES their account can no longer send suggestions or reports.
+    window.markTroll = async (coll, id, uid, email) => {
+      try {
+        const ref  = doc(db,"users",uid);
+        const snap = await getDoc(ref);
+        const u    = snap.data();
+        if (!u)                 { showToast("That account no longer exists."); }
+        else if (u.isAdmin)     { showToast("Can't strike an admin."); return; }
+        else {
+          const strikes = (u.trollStrikes||0) + 1;
+          const blocked = strikes >= MAX_STRIKES;
+          await updateDoc(ref, {
+            trollStrikes: strikes,
+            submitBlocked: blocked || !!u.submitBlocked,
+            warned: true,
+            warnMessage: blocked
+              ? `Strike ${strikes}/${MAX_STRIKES}: your suggestion/report was marked as spam. You can no longer send suggestions or reports.`
+              : `Strike ${strikes}/${MAX_STRIKES}: your suggestion/report was marked as spam. ${MAX_STRIKES-strikes} more and you lose the ability to send them.`
+          });
+          logAction(`troll strike ${strikes}/${MAX_STRIKES}`, email, blocked ? "submissions blocked" : "");
+          showToast(blocked ? `🧌 Strike ${strikes} — ${email} is now blocked from sending` : `🧌 Strike ${strikes}/${MAX_STRIKES} for ${email}`);
+        }
+        await deleteDoc(doc(db,coll,id));
+        document.getElementById((coll==="reports"?"rep-":"sug-")+id)?.remove();
+      } catch(e) { showToast("Couldn't apply strike: "+e.message); }
+    };
+
+    /* ── MOD LOG ────────────────────────────────────────────────────────────── */
+    function logAction(action, target, detail="") {
+      addDoc(collection(db,"modlog"), {
+        action, target: String(target||""), detail, by: auth.currentUser?.email || "?",
+        uid: auth.currentUser?.uid || "", timestamp: new Date().toISOString()
+      }).catch(()=>{});
+    }
 
     function userRow(u, viewerIsOwner, viewerIsAdmin) {
       const initials = (u.email||"?")[0].toUpperCase();
@@ -679,7 +780,20 @@
       if (u.isOwner) badges.push(`<span class="badge owner">👑 OWNER</span>`);
       else if (u.isAdmin) badges.push(`<span class="badge admin">ADMIN</span>`);
       if (u.warned) badges.push(`<span class="badge warned">⚠️ WARNED</span>`);
-      badges.push(u.banned ? `<span class="badge banned">BANNED</span>` : `<span class="badge active">ACTIVE</span>`);
+      if (u.trollStrikes) badges.push(`<span class="badge warned">🧌 ${u.trollStrikes}/${MAX_STRIKES}</span>`);
+      if (u.submitBlocked) badges.push(`<span class="badge banned">NO POSTING</span>`);
+      const banned = isBanActive(u);
+      badges.push(banned ? `<span class="badge banned">BANNED${u.bannedUntil?" until "+esc(new Date(u.bannedUntil).toLocaleString()):""}</span>` : `<span class="badge active">ACTIVE</span>`);
+
+      const d = `data-uid="${esc(u.id)}" data-email="${esc(u.email||"")}"`;
+      const banBtn  = banned
+        ? `<button class="action-btn unban" ${d} onclick="window.adminUnban(this.dataset.uid,this)">Unban</button>`
+        : `<button class="action-btn ban"   ${d} onclick="window.openBanModal(this.dataset.uid,this.dataset.email)">Ban</button>`;
+      const kickBtn = `<button class="action-btn kick" ${d} onclick="window.adminKick(this.dataset.uid,this)">Kick</button>`;
+      const warnBtn = `<button class="action-btn warn" ${d} onclick="window.openWarnModal(this.dataset.uid,this.dataset.email)">Warn</button>`;
+      const postBtn = u.submitBlocked
+        ? `<button class="action-btn unban" ${d} onclick="window.adminSetPosting(this.dataset.uid,true,this)">Allow posts</button>`
+        : `<button class="action-btn kick"  ${d} onclick="window.adminSetPosting(this.dataset.uid,false,this)">Block posts</button>`;
 
       let actions = "";
       if (isSelf) {
@@ -687,31 +801,21 @@
       } else if (u.isOwner) {
         actions = `<span style="font-size:12px;color:#ffd700;font-weight:800">👑 Owner</span>`;
       } else if (viewerIsOwner) {
-        const banBtn  = u.banned
-          ? `<button class="action-btn unban"   onclick="window.adminUnban('${u.id}',this)">Unban</button>`
-          : `<button class="action-btn ban"     onclick="window.adminBan('${u.id}',this)">Ban</button>`;
         const promBtn = u.isAdmin
-          ? `<button class="action-btn demote"  onclick="window.adminDemote('${u.id}',this)">Demote</button>`
-          : `<button class="action-btn promote" onclick="window.adminPromote('${u.id}',this)">Promote</button>`;
-        const kickBtn = `<button class="action-btn kick" onclick="window.adminKick('${u.id}',this)">Kick</button>`;
-        const warnBtn = `<button class="action-btn warn" onclick="window.openWarnModal('${u.id}','${(u.email||"").replace(/'/g,"\\'")}')">Warn</button>`;
-        actions = `${promBtn}${warnBtn}${banBtn}${kickBtn}`;
+          ? `<button class="action-btn demote"  ${d} onclick="window.adminDemote(this.dataset.uid,this)">Demote</button>`
+          : `<button class="action-btn promote" ${d} onclick="window.adminPromote(this.dataset.uid,this)">Promote</button>`;
+        actions = `${promBtn}${warnBtn}${postBtn}${banBtn}${kickBtn}`;
       } else if (viewerIsAdmin && !u.isAdmin) {
-        const banBtn  = u.banned
-          ? `<button class="action-btn unban" onclick="window.adminUnban('${u.id}',this)">Unban</button>`
-          : `<button class="action-btn ban"   onclick="window.adminBan('${u.id}',this)">Ban</button>`;
-        const kickBtn = `<button class="action-btn kick" onclick="window.adminKick('${u.id}',this)">Kick</button>`;
-        const warnBtn = `<button class="action-btn warn" onclick="window.openWarnModal('${u.id}','${(u.email||"").replace(/'/g,"\\'")}')">Warn</button>`;
-        actions = `${warnBtn}${banBtn}${kickBtn}`;
+        actions = `${warnBtn}${postBtn}${banBtn}${kickBtn}`;
       } else if (viewerIsAdmin && u.isAdmin) {
         actions = `<span style="font-size:12px;color:var(--subtext)">Admin</span>`;
       }
 
       return `
         <div class="user-row">
-          <div class="user-avatar">${initials}</div>
+          <div class="user-avatar">${esc(initials)}</div>
           <div class="user-info">
-            <div class="user-email">${u.displayName ? `<strong>${u.displayName}</strong> · ` : ""}${u.email||"Unknown"}</div>
+            <div class="user-email">${u.displayName ? `<strong>${esc(u.displayName)}</strong> · ` : ""}${esc(u.email||"Unknown")}</div>
             <div class="user-meta">${badges.join(" ")}</div>
           </div>
           <div class="user-actions">${actions}</div>
@@ -738,6 +842,7 @@
       btn.disabled = true; btn.textContent = "Sending…";
       try {
         await updateDoc(doc(db,"users",uid), { warned: true, warnMessage: message });
+        logAction("warn", email, message);
         closeWarnModal();
         showToast(`⚠️ Warning sent to ${email}`);
         loadAdminTab("users");
@@ -748,11 +853,53 @@
       }
     };
 
-    window.adminBan     = async (uid,btn) => { btn.disabled=true; btn.textContent="…"; await updateDoc(doc(db,"users",uid),{banned:true});   showToast("🚫 Banned");            loadAdminTab("users"); };
-    window.adminUnban   = async (uid,btn) => { btn.disabled=true; btn.textContent="…"; await updateDoc(doc(db,"users",uid),{banned:false});  showToast("✅ Unbanned");           loadAdminTab("users"); };
-    window.adminKick    = async (uid,btn) => { btn.disabled=true; btn.textContent="…"; await updateDoc(doc(db,"users",uid),{kicked:true});   showToast("👢 User kicked");        loadAdminTab("users"); };
-    window.adminPromote = async (uid,btn) => { btn.disabled=true; btn.textContent="…"; await updateDoc(doc(db,"users",uid),{isAdmin:true});  showToast("⬆️ Promoted to admin");  loadAdminTab("users"); };
-    window.adminDemote  = async (uid,btn) => { btn.disabled=true; btn.textContent="…"; await updateDoc(doc(db,"users",uid),{isAdmin:false}); showToast("⬇️ Demoted from admin"); loadAdminTab("users"); };
+    /* ── BAN / UNBAN / KICK / ROLES ─────────────────────────────────────────── */
+    async function doBan(uid, email, reason, durationMs) {
+      await updateDoc(doc(db,"users",uid), {
+        banned: true, banReason: reason || "", bannedUntil: durationMs > 0 ? Date.now() + durationMs : null
+      });
+      logAction("ban", email, `${durationMs>0 ? Math.round(durationMs/3600000)+"h" : "permanent"}${reason ? " · "+reason : ""}`);
+      showToast(`🚫 Banned ${email}`);
+    }
+    window.openBanModal = (uid, email) => {
+      document.getElementById("ban-uid").value = uid;
+      document.getElementById("ban-target-email").value = email;
+      document.getElementById("ban-modal-target").textContent = email;
+      document.getElementById("ban-reason-input").value = "";
+      document.getElementById("ban-error").textContent = "";
+      document.getElementById("ban-modal").style.display = "flex";
+    };
+    window.closeBanModal = () => { document.getElementById("ban-modal").style.display = "none"; };
+    window.confirmBan = async () => {
+      const btn = document.getElementById("ban-submit-btn");
+      btn.disabled = true;
+      try {
+        await doBan(document.getElementById("ban-uid").value, document.getElementById("ban-target-email").value,
+          document.getElementById("ban-reason-input").value.trim(),
+          parseInt(document.getElementById("ban-duration").value, 10));
+        closeBanModal(); loadAdminTab("users");
+      } catch(e) { document.getElementById("ban-error").textContent = "Failed: " + e.message; }
+      finally { btn.disabled = false; }
+    };
+    const adminAct = (label, toast, fn, logName) => async (uid, btn) => {
+      btn.disabled = true; btn.textContent = "…";
+      try { await updateDoc(doc(db,"users",uid), fn); logAction(logName, btn.dataset.email || uid); showToast(toast); }
+      catch(e) { showToast("Failed: " + e.message); }
+      loadAdminTab("users");
+    };
+    window.adminUnban   = adminAct("Unban",   "✅ Unbanned",           { banned:false, bannedUntil:null, banReason:"" }, "unban");
+    window.adminKick    = adminAct("Kick",    "👢 User kicked",        { kicked:true },   "kick");
+    window.adminPromote = adminAct("Promote", "⬆️ Promoted to admin",  { isAdmin:true },  "promote");
+    window.adminDemote  = adminAct("Demote",  "⬇️ Demoted from admin", { isAdmin:false }, "demote");
+    window.adminSetPosting = async (uid, allow, btn) => {
+      btn.disabled = true; btn.textContent = "…";
+      try {
+        await updateDoc(doc(db,"users",uid), allow ? { submitBlocked:false, trollStrikes:0 } : { submitBlocked:true });
+        logAction(allow ? "allow posting" : "block posting", btn.dataset.email || uid);
+        showToast(allow ? "✅ Can send suggestions/reports again" : "🚫 Blocked from suggestions/reports");
+      } catch(e) { showToast("Failed: " + e.message); }
+      loadAdminTab("users");
+    };
 
     /* ── ENSURE USER ────────────────────────────────────────────────────────── */
     async function ensureUser(user) {
@@ -765,7 +912,8 @@
         await setDoc(ref, {
           email:user.email, favorites:[], theme:"dark", banned:false,
           isAdmin, isOwner, recentlyPlayed:[], ratings:{}, displayName:"", kicked:false,
-          warned:false, warnMessage:""
+          warned:false, warnMessage:"", banReason:"", bannedUntil:null,
+          trollStrikes:0, submitBlocked:false, createdAt: serverTimestamp()
         });
       } else {
         const d = snap.data();
@@ -775,31 +923,6 @@
         if (Object.keys(updates).length) await updateDoc(ref, updates);
       }
     }
-
-    /* ── WARN SCREEN ────────────────────────────────────────────────────────── */
-    function showWarnScreen(message) {
-      // Remove any existing warn overlay
-      document.getElementById("warn-overlay")?.remove();
-      const overlay = document.createElement("div");
-      overlay.id = "warn-overlay";
-      overlay.className = "warn-notice";
-      overlay.innerHTML = `
-        <div class="warn-box">
-          <h2>⚠️ Warning</h2>
-          <p>You have received a warning from an admin.</p>
-          <div class="warn-msg">${message || "Please follow the rules."}</div>
-          <p style="font-size:12px;color:#666;">Further violations may result in a ban.</p>
-          <button class="warn-dismiss" onclick="dismissWarnScreen()">I understand</button>
-        </div>`;
-      document.body.appendChild(overlay);
-    }
-    window.dismissWarnScreen = async () => {
-      document.getElementById("warn-overlay")?.remove();
-      const user = auth.currentUser;
-      if (user) {
-        await updateDoc(doc(db,"users",user.uid), { warned:false, warnMessage:"" }).catch(()=>{});
-      }
-    };
 
     /* ── AUTH STATE ─────────────────────────────────────────────────────────── */
     onAuthStateChanged(auth, async user => {
@@ -811,6 +934,11 @@
       if (!user) {
         loginScreen.style.display="flex"; main.style.display="none";
         userData={}; showingFavs=false;
+        if (kickedNotice || new URLSearchParams(location.search).get("kicked")) {
+          document.getElementById("email-auth-error").textContent = "👢 You were kicked by an admin. You can sign back in.";
+          kickedNotice = false;
+          history.replaceState(null, "", location.pathname);
+        }
         return;
       }
 
@@ -818,21 +946,23 @@
       const snap = await getDoc(doc(db,"users",user.uid));
       const data = snap.data();
 
-      if (data.banned) {
-        document.body.innerHTML = `
-          <div style="display:flex;align-items:center;justify-content:center;min-height:100vh;background:#0d0d0d;">
-            <div style="text-align:center;color:white;font-family:'Nunito',sans-serif;">
-              <div style="font-size:5em;margin-bottom:16px;">🚫</div>
-              <h1 style="color:#ff4444;font-size:2.5em;margin-bottom:8px;">You are banned.</h1>
-              <p style="color:#888;">Contact an admin if you believe this is a mistake.</p>
-            </div>
-          </div>`;
+      if (data.banned && !isBanActive(data)) {            // temp ban has run out → clear it
+        await updateDoc(doc(db,"users",user.uid), { banned:false, bannedUntil:null, banReason:"" }).catch(()=>{});
+        data.banned = false;
+      }
+      if (isBanActive(data)) {
+        renderBanScreen(data);
+        watchForUnban(user.uid);                           // page comes back by itself if they're unbanned
         return;
       }
 
       userData = data;
       loginScreen.style.display="none";
       main.style.display="block";
+
+      // Sent here from a game page to log in? Send them back to it.
+      const next = new URLSearchParams(location.search).get("next");
+      if (next && /^games\/[\w.-]+\.html$/.test(next)) { location.replace(next); return; }
 
       applyTheme(data.theme !== "light");
       updateNameChip();
@@ -844,7 +974,7 @@
 
       // Show warn screen if they have a pending warning
       if (data.warned && data.warnMessage) {
-        showWarnScreen(data.warnMessage);
+        showWarnOverlay(data.warnMessage);
       }
 
       if (!data.displayName) setTimeout(() => openNameModal(), 800);
@@ -857,20 +987,24 @@
         const d = snap.data();
         if (!d || !auth.currentUser) return;
 
-        // Live kick
-        if (d.kicked) {
-          updateDoc(doc(db,"users",user.uid), { kicked:false }).then(() => signOut(auth));
-          showToast("👢 You have been kicked by an admin.");
+        // Live ban — straight to the ban screen (no sign-out, so they see why)
+        if (isBanActive(d)) {
+          userUnsubscribe && userUnsubscribe(); userUnsubscribe = null;
+          renderBanScreen(d);
+          watchForUnban(user.uid);
+          return;
         }
 
-        // Live ban
-        if (d.banned) {
-          signOut(auth);
+        // Live kick
+        if (d.kicked) {
+          kickedNotice = true;
+          updateDoc(doc(db,"users",user.uid), { kicked:false }).catch(()=>{}).then(() => signOut(auth));
+          return;
         }
 
         // Live warn — show the screen if a new warning arrives
         if (d.warned && d.warnMessage && !document.getElementById("warn-overlay")) {
-          showWarnScreen(d.warnMessage);
+          showWarnOverlay(d.warnMessage);
         }
       });
     });
@@ -899,6 +1033,7 @@
       document.getElementById("admin-btn").addEventListener("click",       openAdmin);
       document.getElementById("hamburger-btn").addEventListener("click",   toggleMobileMenu);
       document.getElementById("suggest-btn").addEventListener("click",     openSuggestionModal);
+      document.getElementById("report-btn").addEventListener("click",      () => window.openReport());
 
       // Mobile menu buttons
       document.getElementById("mm-favorites-btn").addEventListener("click",  () => { toggleFavFilter(); closeMobileMenu(); });
@@ -906,6 +1041,7 @@
       document.getElementById("mm-admin-btn").addEventListener("click",      () => { openAdmin(); closeMobileMenu(); });
       document.getElementById("mm-name-btn").addEventListener("click",       () => { openNameModal(); closeMobileMenu(); });
       document.getElementById("mm-suggest-btn").addEventListener("click",    () => { openSuggestionModal(); closeMobileMenu(); });
+      document.getElementById("mm-report-btn").addEventListener("click",     () => { window.openReport(); closeMobileMenu(); });
       document.getElementById("mm-logout-btn").addEventListener("click",     () => { signOut(auth); closeMobileMenu(); });
       document.getElementById("mobile-menu-backdrop").addEventListener("click", closeMobileMenu);
 
@@ -930,6 +1066,9 @@
       });
       document.getElementById("suggestion-modal").addEventListener("click", e => {
         if (e.target===document.getElementById("suggestion-modal")) closeSuggestionModal();
+      });
+      document.getElementById("ban-modal").addEventListener("click", e => {
+        if (e.target===document.getElementById("ban-modal")) closeBanModal();
       });
       document.getElementById("warn-modal").addEventListener("click", e => {
         if (e.target===document.getElementById("warn-modal")) closeWarnModal();
@@ -1001,6 +1140,7 @@
   <button id="mm-theme-btn"     class="mm-btn">🌓 Toggle Theme</button>
   <button id="mm-name-btn"      class="mm-btn">👤 Display Name</button>
   <button id="mm-suggest-btn"   class="mm-btn">💡 Suggest a Game</button>
+  <button id="mm-report-btn"    class="mm-btn">🚩 Report a Problem</button>
   <button id="mm-admin-btn"     class="mm-btn" style="display:none;">🛡️ Admin Panel</button>
   <div class="mm-divider"></div>
   <button id="mm-logout-btn"    class="mm-btn mm-danger">Logout</button>
@@ -1095,6 +1235,29 @@
   </div>
 </div>
 
+<!-- BAN MODAL (admin bans someone: reason + duration) -->
+<div id="ban-modal" style="display:none;">
+  <div class="name-modal-box">
+    <h3>🚫 Ban user</h3>
+    <p id="ban-modal-target" style="word-break:break-all"></p>
+    <input type="hidden" id="ban-uid"/>
+    <input type="hidden" id="ban-target-email"/>
+    <select id="ban-duration" class="auth-input">
+      <option value="3600000">1 hour</option>
+      <option value="86400000">1 day</option>
+      <option value="604800000">7 days</option>
+      <option value="2592000000">30 days</option>
+      <option value="0" selected>Permanent</option>
+    </select>
+    <input type="text" id="ban-reason-input" class="auth-input" placeholder="Reason (shown to the user)" maxlength="200"/>
+    <div id="ban-error" class="auth-error"></div>
+    <div style="display:flex;gap:10px;margin-top:4px;">
+      <button class="auth-btn" id="ban-submit-btn" onclick="confirmBan()" style="background:#e74c3c;">Ban</button>
+      <button class="auth-btn auth-btn-secondary" onclick="closeBanModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <!-- ADMIN OVERLAY -->
 <div id="admin-overlay">
   <div id="admin-panel">
@@ -1105,9 +1268,11 @@
     <div class="admin-tabs">
       <button class="tab-btn active" data-tab="users">👥 Users</button>
       <button class="tab-btn" data-tab="ban-email">✉️ Ban by Email</button>
+      <button class="tab-btn" data-tab="reports">🚩 Reports</button>
       <button class="tab-btn" data-tab="suggestions">💡 Suggestions</button>
       <button class="tab-btn" data-tab="stats">📊 Stats</button>
       <button class="tab-btn" data-tab="announce">📢 Announce</button>
+      <button class="tab-btn" data-tab="log">📜 Mod Log</button>
       <button class="tab-btn" data-tab="roles">🏅 Roles</button>
     </div>
     <div class="admin-body" id="admin-body">
@@ -1128,6 +1293,7 @@
       <button id="user-name-chip"  class="name-chip"  onclick="openNameModal()">👤 …</button>
       <button id="show-favorites"  class="top-btn">⭐ Favorites</button>
       <button id="suggest-btn"     class="top-btn">💡 Suggest</button>
+      <button id="report-btn"      class="top-btn">🚩 Report</button>
       <button id="toggle-theme"    class="top-btn">🌓</button>
       <button id="admin-btn"       style="display:none;">🛡️ Admin</button>
       <button id="logout-btn"      class="top-btn">Logout</button>

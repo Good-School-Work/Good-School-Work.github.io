@@ -57,10 +57,11 @@
   #signinNote a { color: #6c63ff; }
 </style>
 </head>
-<body>`r`n  <a href="../index.html" class="back-link">← Back to home</a>
+<body>
+  <a href="../index.html" class="back-link">← Back to home</a>
 
 <a href="../index.html" class="back-link">â† Back to home</a>
-<h1>ðŸ¦– No Internet Dino</h1>
+<h1>🦖 No Internet Dino</h1>
 <div id="status">Loading...</div>
 
 <canvas id="gameCanvas" width="600" height="200"></canvas>
@@ -68,10 +69,10 @@
 <div id="scoreboard">
   <div>Score: <span id="score">0</span></div>
   <div>Best (this device): <span id="localBest">0</span></div>
-  <div>Best (your account): <span id="cloudBest">â€“</span></div>
+  <div>Best (your account): <span id="cloudBest">–</span></div>
 </div>
 
-<div id="signinNote">Not signed in â€” <a href="../index.html">sign in on the home page</a> to save your score to your account.</div>
+<div id="signinNote">Not signed in — <a href="../index.html">sign in on the home page</a> to save your score to your account.</div>
 <div id="hint">Press SPACE or tap the game to jump. Press SPACE to start/restart.</div>
 
 <script type="module">
@@ -98,7 +99,7 @@
   const sprite = new Image();
   let spriteLoaded = false;
   sprite.onload = () => { spriteLoaded = true; };
-  sprite.onerror = () => { console.warn('trex-sprite.png not found â€” falling back to shapes.'); };
+  sprite.onerror = () => { console.warn('trex-sprite.png not found — falling back to shapes.'); };
   sprite.src = 'assets/trex-sprite.png';
 
   const SPRITE = {
@@ -233,7 +234,7 @@
     if (gameOver) {
       ctx.fillStyle = '#f0f0f0';
       ctx.font = '16px Nunito, sans-serif';
-      ctx.fillText('Game over â€” press SPACE to retry', W / 2 - 120, H / 2);
+      ctx.fillText('Game over — press SPACE to retry', W / 2 - 120, H / 2);
     }
   }
 
@@ -313,11 +314,15 @@
       await loadCloudBest(user.uid);
     } else {
       statusEl.textContent = 'Not signed in';
-      cloudBestEl.textContent = 'â€“';
+      cloudBestEl.textContent = '–';
       signinNote.style.display = 'block';
     }
   });
 </script>
 
+<script type="module">
+  import { startGuard } from "../moderation.js";
+  startGuard();   // live kick / ban / warn + login check (see moderation.js)
+</script>
 </body>
 </html>

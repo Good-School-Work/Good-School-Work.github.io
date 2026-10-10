@@ -92,7 +92,8 @@
   }
   .back-link:hover { text-decoration: underline; }</style>
 </head>
-<body>`r`n  <a href="../index.html" class="back-link">← Back to home</a>
+<body>
+  <a href="../index.html" class="back-link">← Back to home</a>
   <div id="game-viewport">
     <!-- Scratch project 332026728 via TurboWarp: autoplay + no Scratch site chrome -->
     <iframe
@@ -108,9 +109,9 @@
 
   <div id="click-overlay">
     ðŸ¬ Click to Play Candy Clicker
-    <span>Fullscreen Â· autoplay on</span>
+    <span>Fullscreen · autoplay on</span>
   </div>
-  <button id="fullscreen-btn" type="button">â›¶ Fullscreen</button>
+  <button id="fullscreen-btn" type="button">⛶ Fullscreen</button>
 
   <script>
     const overlay = document.getElementById("click-overlay");
@@ -136,18 +137,22 @@
         } catch (_) {
           try { await document.documentElement.requestFullscreen(); } catch (_) {}
         }
-        btn.textContent = "âœ• Exit";
+        btn.textContent = "✕ Exit";
       } else {
         document.exitFullscreen();
-        btn.textContent = "â›¶ Fullscreen";
+        btn.textContent = "⛶ Fullscreen";
       }
     }
     btn.addEventListener("click", toggleFullscreen);
 
     document.addEventListener("fullscreenchange", () => {
-      btn.textContent = document.fullscreenElement ? "âœ• Exit" : "â›¶ Fullscreen";
+      btn.textContent = document.fullscreenElement ? "✕ Exit" : "⛶ Fullscreen";
     });
   </script>
+<script type="module">
+  import { startGuard } from "../moderation.js";
+  startGuard();   // live kick / ban / warn + login check (see moderation.js)
+</script>
 </body>
 </html>
 

@@ -640,6 +640,8 @@
             if (a>bestAvg) { bestAvg=a; bestName=GAMES.find(g=>g.id===d.id)?.name||d.id; }
           });
           body.innerHTML = `
+            <button class="admin-submit" id="sync-lb" style="margin-bottom:14px;width:100%">🔄 Sync leaderboards from everyone's saved scores</button>
+            <div id="sync-lb-result" style="margin:-6px 0 14px;font-size:13px;font-weight:700"></div>
             <div class="stats-grid">
               <div class="stat-card"><div class="stat-num">${totalUsers}</div><div class="stat-label">Total Users</div></div>
               <div class="stat-card"><div class="stat-num" style="color:var(--danger)">${banned}</div><div class="stat-label">Banned</div></div>
@@ -656,7 +658,24 @@
                 <div><div class="stat-label">Highest Rated</div><div class="stat-value">${bestName} <span class="stat-sub">${bestAvg>0?"("+bestAvg.toFixed(1)+"/5)":"(no ratings yet)"}</span></div></div>
               </div>
             </div>`;
-        } catch(e) { body.innerHTML=`<p style="color:var(--danger);">Error: ${e.message}</p>`; }
+          document.getElementById("sync-lb").addEventListener("click", async () => {
+            const out = document.getElementById("sync-lb-result"); out.style.color = "var(--subtext)"; out.textContent = "Syncing…";
+            try {
+              let n = 0;
+              for (const d of usersSnap.docs) {
+                const u = d.data();
+                for (const [game, score] of Object.entries(u.gameScores || {})) {
+                  if (typeof score !== "number" || score <= 0) continue;
+                  await setDoc(doc(db, "scores", game, "entries", d.id),
+                    { name: String(u.displayName || (u.email||"").split("@")[0] || "Player").slice(0,24), score });
+                  n++;
+                }
+              }
+              logAction("leaderboard sync", n + " scores");
+              out.style.color = "var(--success)"; out.textContent = `✅ Synced ${n} scores to the leaderboards.`;
+            } catch(e) { out.style.color = "var(--danger)"; out.textContent = "Failed: " + e.message; }
+          });
+        } catch(e) { body.innerHTML=`<p style="color:var(--danger);">Error: ${esc(e.message)}</p>`; }
 
       } else if (tab === "announce") {
         let cur="";
@@ -707,9 +726,21 @@
             <div class="suggestion-meta">by ${esc(who)} · ${esc(time)}</div>
           </div>
           <button class="suggestion-del" data-id="${esc(s.id)}" onclick="deleteSuggestion(this.dataset.id)">✕ Dismiss</button>
-          ${s.uid ? `<button class="suggestion-del" style="color:#ff9f43" data-id="${esc(s.id)}" data-uid="${esc(s.uid)}" data-email="${esc(s.submittedBy)}" onclick="markTroll('suggestions',this.dataset.id,this.dataset.uid,this.dataset.email)">🧌 Troll</button>` : ""}
+          <button class="suggestion-del" style="color:#ff9f43" data-id="${esc(s.id)}" data-uid="${esc(s.uid||"")}" data-email="${esc(s.submittedBy)}" onclick="markTroll('suggestions',this.dataset.id,this.dataset.uid,this.dataset.email)">⚠ Troll</button>
         </div>`;
     }
+
+    window.deleteSuggestion = async (id) => {
+      try {
+        await deleteDoc(doc(db, "suggestions", id));
+        logAction("suggestion dismissed", id);
+        document.getElementById(`sug-${id}`)?.remove();
+        const list = document.getElementById("suggestion-list");
+        if (list && !list.children.length) {
+          list.innerHTML = `<p style="color:var(--subtext);text-align:center;padding:20px 0">No more suggestions!</p>`;
+        }
+      } catch(e) { showToast("Couldn't dismiss: " + e.message); }
+    };
 
     const gameLabel = k => { const g = GAMES.find(x => gameFile(x) === k); return g ? g.name : k; };
     function reportRow(r) {
@@ -725,7 +756,7 @@
           </div>
           <button class="suggestion-del" style="color:#4cd964" data-id="${esc(r.id)}" onclick="resolveReport(this.dataset.id)">✔ Resolve</button>
           <button class="suggestion-del" data-id="${esc(r.id)}" onclick="resolveReport(this.dataset.id,true)">✕ Dismiss</button>
-          ${r.uid ? `<button class="suggestion-del" style="color:#ff9f43" data-id="${esc(r.id)}" data-uid="${esc(r.uid)}" data-email="${esc(r.reporterEmail)}" onclick="markTroll('reports',this.dataset.id,this.dataset.uid,this.dataset.email)">🧌 Troll</button>` : ""}
+          <button class="suggestion-del" style="color:#ff9f43" data-id="${esc(r.id)}" data-uid="${esc(r.uid||"")}" data-email="${esc(r.reporterEmail)}" onclick="markTroll('reports',this.dataset.id,this.dataset.uid,this.dataset.email)">⚠ Troll</button>
         </div>`;
     }
     window.resolveReport = async (id) => {
@@ -741,10 +772,13 @@
     // At MAX_STRIKES their account can no longer send suggestions or reports.
     window.markTroll = async (coll, id, uid, email) => {
       try {
-        const ref  = doc(db,"users",uid);
-        const snap = await getDoc(ref);
-        const u    = snap.data();
-        if (!u)                 { showToast("That account no longer exists."); }
+        if (!uid && email) {   // older suggestions were saved without a uid → find the account by email
+          const all = await getDocs(collection(db,"users"));
+          uid = all.docs.find(d => (d.data().email||"").toLowerCase() === String(email).toLowerCase())?.id || "";
+        }
+        const ref  = uid ? doc(db,"users",uid) : null;
+        const u    = ref ? (await getDoc(ref)).data() : null;
+        if (!u)                 { showToast("Couldn't find that person's account — removed it without a strike."); }
         else if (u.isAdmin)     { showToast("Can't strike an admin."); return; }
         else {
           const strikes = (u.trollStrikes||0) + 1;
@@ -758,7 +792,7 @@
               : `Strike ${strikes}/${MAX_STRIKES}: your suggestion/report was marked as spam. ${MAX_STRIKES-strikes} more and you lose the ability to send them.`
           });
           logAction(`troll strike ${strikes}/${MAX_STRIKES}`, email, blocked ? "submissions blocked" : "");
-          showToast(blocked ? `🧌 Strike ${strikes} — ${email} is now blocked from sending` : `🧌 Strike ${strikes}/${MAX_STRIKES} for ${email}`);
+          showToast(blocked ? `⚠ Strike ${strikes} — ${email} is now blocked from sending` : `⚠ Strike ${strikes}/${MAX_STRIKES} for ${email}`);
         }
         await deleteDoc(doc(db,coll,id));
         document.getElementById((coll==="reports"?"rep-":"sug-")+id)?.remove();
@@ -780,7 +814,7 @@
       if (u.isOwner) badges.push(`<span class="badge owner">👑 OWNER</span>`);
       else if (u.isAdmin) badges.push(`<span class="badge admin">ADMIN</span>`);
       if (u.warned) badges.push(`<span class="badge warned">⚠️ WARNED</span>`);
-      if (u.trollStrikes) badges.push(`<span class="badge warned">🧌 ${u.trollStrikes}/${MAX_STRIKES}</span>`);
+      if (u.trollStrikes) badges.push(`<span class="badge warned">⚠ STRIKES ${u.trollStrikes}/${MAX_STRIKES}</span>`);
       if (u.submitBlocked) badges.push(`<span class="badge banned">NO POSTING</span>`);
       const banned = isBanActive(u);
       badges.push(banned ? `<span class="badge banned">BANNED${u.bannedUntil?" until "+esc(new Date(u.bannedUntil).toLocaleString()):""}</span>` : `<span class="badge active">ACTIVE</span>`);

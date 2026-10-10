@@ -104,7 +104,13 @@ export function showWarnOverlay(message) {
 export function startGuard() {
   const page = location.pathname.split("/").pop() || "";
   const home = qs => new URL("../index.html" + qs, location.href).href;
-  const go   = qs => location.replace(home(qs));
+  const go   = qs => {
+    // Embedded games (e.g. Rivals) install their own "Leave site? Changes may be lost" prompt.
+    // Removing the iframes first means there's nothing left to ask, so the redirect just happens.
+    window.onbeforeunload = null;
+    document.querySelectorAll("iframe").forEach(f => f.remove());
+    location.replace(home(qs));
+  };
 
   // Black cover so a banned/kicked player never sees the game flash up first
   const cover = document.createElement("div");

@@ -8,7 +8,7 @@
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
-  getFirestore, doc, getDoc, updateDoc, onSnapshot, writeBatch, serverTimestamp
+  getFirestore, doc, getDoc, setDoc, deleteDoc, updateDoc, onSnapshot, writeBatch, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 /* ── CONFIG ──────────────────────────────────────────────────────────────── */
@@ -93,6 +93,35 @@ export function showWarnOverlay(message) {
   };
 }
 
+/* ── PRESENCE: lets admins see who is online and what they're on ───────────
+   Each signed-in player writes one small doc (presence/<uid>) once a minute.
+   Admins read the collection in the "👀 Live" tab. Anything older than ~2½ minutes = gone. */
+export const PRESENCE_MS    = 60000;    // how often a page reports in
+export const PRESENCE_STALE = 150000;   // admin panel hides people not seen for this long
+let presTimer = null, presVis = null;
+
+export function startPresence(page, name = "") {
+  stopPresence(false);
+  const user = auth.currentUser;
+  if (!user) return;
+  const since = Date.now();
+  const write = () => setDoc(doc(db, "presence", user.uid), {
+    name: String(name || "").slice(0, 24), email: user.email || "",
+    page: String(page || "home").slice(0, 60), since,
+    visible: !document.hidden, lastSeen: serverTimestamp()
+  }).catch(() => {});
+  write();
+  presTimer = setInterval(() => { if (!document.hidden) write(); }, PRESENCE_MS);
+  presVis = () => write();                      // tell admins straight away when the tab is hidden/shown
+  document.addEventListener("visibilitychange", presVis);
+}
+export function stopPresence(remove = true) {
+  clearInterval(presTimer); presTimer = null;
+  if (presVis) { document.removeEventListener("visibilitychange", presVis); presVis = null; }
+  const user = auth.currentUser;
+  if (remove && user) deleteDoc(doc(db, "presence", user.uid)).catch(() => {});
+}
+
 /* ── GAME-PAGE GUARD: live kick / ban / warn while playing ───────────────── */
 /**
  * Call once from a game page (pages live in /games/, so home is ../index.html).
@@ -119,7 +148,7 @@ export function startGuard() {
   (document.body || document.documentElement).appendChild(cover);
   const failTimer = setTimeout(() => { cover.textContent = "Couldn't verify your account. Check your connection and reload."; }, 10000);
 
-  let unsub = null;
+  let unsub = null, presenceOn = false;
   onAuthStateChanged(auth, user => {
     if (unsub) { unsub(); unsub = null; }
     if (!user) return go("?next=" + encodeURIComponent("games/" + page));
@@ -142,6 +171,7 @@ export function startGuard() {
       clearTimeout(failTimer);
       cover.remove();
       addReportButton();
+      if (!presenceOn) { presenceOn = true; startPresence(page.replace(/\.html$/i, ""), d.displayName); }
       if (d.warned && d.warnMessage && !document.getElementById("warn-overlay")) showWarnOverlay(d.warnMessage); // LIVE WARN
     }, () => { cover.textContent = "Couldn't verify your account. Check your connection and reload."; });
   });

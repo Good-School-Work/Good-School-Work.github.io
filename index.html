@@ -21,7 +21,8 @@
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
     import {
       auth, db, esc, slug, tsMs, isBanActive, renderBanScreen, watchForUnban, showWarnOverlay,
-      looksLikeTroll, submitBlockReason, submitFeedback, openReportModal, MAX_STRIKES
+      looksLikeTroll, submitBlockReason, submitFeedback, openReportModal, MAX_STRIKES,
+      startPresence, stopPresence, PRESENCE_STALE
     } from "./moderation.js";
 
     const OWNER_EMAILS = ["dragon.playz933@gmail.com", "ehanahmad@tahuna.school.nz"];
@@ -522,14 +523,67 @@
       document.querySelectorAll(".tab-btn").forEach((b,i) => b.classList.toggle("active", i===0));
       loadAdminTab("users");
     }
-    function closeAdmin() { document.getElementById("admin-overlay").classList.remove("open"); }
+    function closeAdmin() { stopLive(); document.getElementById("admin-overlay").classList.remove("open"); }
+
+    /* ── LIVE TAB: who's online + what they're playing ─────────────────────── */
+    let liveUnsub = null, liveTimer = null;
+    function stopLive() { liveUnsub && liveUnsub(); clearInterval(liveTimer); liveUnsub = liveTimer = null; }
+    window.liveKick = async (uid, btn) => {
+      btn.disabled = true;
+      try {
+        await updateDoc(doc(db,"users",uid), { kicked:true });
+        logAction("kick (live)", btn.dataset.email || uid);
+        showToast("👢 Kicked");
+      } catch(e) { showToast(e.code === "permission-denied" ? "Can't kick an admin/owner." : "Failed: " + e.message); }
+      btn.disabled = false;
+    };
+
+    function renderLive(rows) {
+      const list = document.getElementById("live-list"); if (!list) return;
+      const now  = Date.now(), me = auth.currentUser?.uid;
+      const fresh = rows.map(r => ({ ...r, seen: r.lastSeen ? tsMs(r.lastSeen) : now }))
+                        .filter(r => now - r.seen < PRESENCE_STALE);
+      const rank = r => (r.page !== "home" && r.visible !== false) ? 0 : (r.page === "home" ? 1 : 2);
+      fresh.sort((a,b) => rank(a) - rank(b) || (a.since - b.since));
+      const playing = fresh.filter(r => r.page !== "home").length;
+      document.getElementById("live-count").textContent = `${fresh.length} online · ${playing} in a game`;
+      if (!fresh.length) { list.innerHTML = `<p style="color:var(--subtext);text-align:center;padding:24px 0">Nobody online right now 😴</p>`; return; }
+      list.innerHTML = fresh.map(r => {
+        const home  = r.page === "home";
+        const label = home ? "🏠 Browsing the home page" : "🎮 " + (GAMES.find(g => gameFile(g) === r.page)?.name || r.page.replace(/[-_]/g, " "));
+        const mins  = Math.max(0, Math.floor((now - (r.since || now)) / 60000));
+        const status = r.visible === false ? `<span class="badge warned">💤 TAB IN BACKGROUND</span>` : `<span class="badge active">🟢 ACTIVE</span>`;
+        const who   = r.name ? `<strong>${esc(r.name)}</strong> · ${esc(r.email)}` : esc(r.email || "Unknown");
+        const d     = `data-email="${esc(r.email)}"`;
+        const actions = r.id === me ? `<span style="font-size:12px;color:var(--subtext)">You</span>` : `
+            <button class="action-btn warn" ${d} onclick="openWarnModal('${esc(r.id)}',this.dataset.email)">Warn…</button>
+            <button class="action-btn kick" ${d} onclick="liveKick('${esc(r.id)}',this)">Kick</button>`;
+        return `<div class="user-row">
+          <div class="user-avatar">${esc((r.name || r.email || "?")[0].toUpperCase())}</div>
+          <div class="user-info"><div class="user-email">${who}</div>
+            <div class="user-meta">${esc(label)} · ${mins} min ${status}</div></div>
+          <div class="user-actions">${actions}</div></div>`;
+      }).join("");
+    }
 
     async function loadAdminTab(tab) {
+      stopLive();
       const body          = document.getElementById("admin-body");
       const viewerIsOwner = userData.isOwner || false;
       const viewerIsAdmin = userData.isAdmin || false;
 
-      if (tab === "users") {
+      if (tab === "live") {
+        body.innerHTML = `
+          <div id="live-count" style="font-weight:800;margin-bottom:4px">Loading…</div>
+          <div class="admin-note" style="margin:0 0 12px">Players seen in the last 2½ minutes. Updates by itself. Players are told on the login screen that admins can see this.</div>
+          <div class="user-list" id="live-list"></div>`;
+        let rows = [];
+        liveUnsub = onSnapshot(collection(db,"presence"),
+          snap => { rows = snap.docs.map(d => ({ id:d.id, ...d.data() })); renderLive(rows); },
+          err  => { body.innerHTML = `<p style="color:var(--danger)">Couldn't load: ${esc(err.message)}</p>`; });
+        liveTimer = setInterval(() => renderLive(rows), 15000);   // keeps "minutes" and "gone" fresh
+
+      } else if (tab === "users") {
         body.innerHTML = `<div class="center"><div class="spin"></div></div>`;
         try {
           const snap = await getDocs(collection(db,"users"));
@@ -1006,6 +1060,7 @@
       GAMES.forEach(g => updateGameStatUI(g.id));
       loadGameStats();
       loadAnnouncement();
+      startPresence("home", data.displayName);
 
       // Show warn screen if they have a pending warning
       if (data.warned && data.warnMessage) {
@@ -1189,6 +1244,7 @@
       <span class="brand-title">Unblocked Games</span>
     </h1>
     <p>Sign in to save your favorites &amp; settings</p>
+    <p style="font-size:11px;opacity:.6;margin:-6px 0 10px">Admins can see which game you're playing.</p>
     <div id="auth-form" style="display:flex;flex-direction:column;gap:10px;">
       <input type="email"    id="email-input"    class="auth-input" placeholder="Email address"  autocomplete="email"/>
       <input type="password" id="password-input" class="auth-input" placeholder="Password"       autocomplete="current-password"/>
@@ -1302,6 +1358,7 @@
     </div>
     <div class="admin-tabs">
       <button class="tab-btn active" data-tab="users">👥 Users</button>
+      <button class="tab-btn" data-tab="live">👀 Live</button>
       <button class="tab-btn" data-tab="ban-email">✉️ Ban by Email</button>
       <button class="tab-btn" data-tab="reports">🚩 Reports</button>
       <button class="tab-btn" data-tab="suggestions">💡 Suggestions</button>
